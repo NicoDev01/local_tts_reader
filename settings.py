@@ -12,7 +12,8 @@ DEFAULTS = dict(hotkey="ctrl+alt+v", pause_hotkey="ctrl+alt+space", stop_hotkey=
                 prev_hotkey="ctrl+alt+left", next_hotkey="ctrl+alt+right",
                 voice="de-DE-KillianNeural", speed=1.05, volume=0.7, pitch="+0Hz",
                 restore_clipboard=True, autostart=False, hud_enabled=True,
-                theme="system", sound_profile="studio_warmth")
+                theme="system", sound_profile="studio_warmth",
+                hud_anchor=[], welcomed=False)  # hud_anchor: bottom-right [x, y] after dragging
 # Voices offered by the Edge read-aloud service (checked 2026-10-26). Seraphina is listed by
 # the service but failed about every second request, so it is left out.
 VOICES = {"de-DE-KillianNeural": "Killian", "de-DE-ConradNeural": "Conrad",
@@ -51,6 +52,9 @@ def validate(raw):
         cfg["voice"] = DEFAULTS["voice"]
     if cfg["sound_profile"] not in PROFILES:
         cfg["sound_profile"] = DEFAULTS["sound_profile"]
+    if not (cfg["hud_anchor"] == [] or (len(cfg["hud_anchor"]) == 2
+                                        and all(type(v) is int for v in cfg["hud_anchor"]))):
+        cfg["hud_anchor"] = []
     if cfg["theme"] not in ("system", "light", "dark"):
         cfg["theme"] = "system"
     import re

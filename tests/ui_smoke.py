@@ -122,6 +122,20 @@ with patch.object(reader_ui.keyboard, 'add_hotkey', return_value=None), \
         app.playback.current = None
         app.stop()
 
+        # Dragged position is kept per corner anchor; a double-click returns to the default corner.
+        from PySide6.QtCore import QPoint
+        from PySide6.QtGui import QGuiApplication
+        center = QGuiApplication.primaryScreen().availableGeometry().center()
+        app.hud.set_anchor([center.x(), center.y()])
+        app.hud._place()
+        card_corner = app.hud.pos() + QPoint(app.hud.width() - 16, app.hud.height() - 16)
+        assert card_corner == center, (card_corner, center)
+        moved = []
+        app.hud.moved.connect(moved.append)
+        app.hud.mouseDoubleClickEvent(None)
+        assert moved == [None] and app.hud.anchor is None
+        app._hud_moved(None)
+
         app._message('Kein Text markiert')
         pump(.3)
         assert app.hud.isVisible() and 'Kein Text' in app.hud.sentence.text()

@@ -130,6 +130,7 @@ class MiniPlayer(QWidget):
     speed_step = Signal(int)
     volume_toggle = Signal()
     volume_step = Signal(int)
+    moved = Signal(object)  # new bottom-right anchor [x, y], or None after a reset
 
     def __init__(self):
         super().__init__(None, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
@@ -140,6 +141,8 @@ class MiniPlayer(QWidget):
         self.collapsed = False
         self.paused = False
         self._text, self._is_status = "", True
+        self.anchor = None  # QPoint of the card's bottom-right corner once dragged
+        self._press = None
         self._build()
         self._apply_size()
         self._fade = None
@@ -212,8 +215,7 @@ class MiniPlayer(QWidget):
         h.addWidget(self.mini_play)
         h.addWidget(self.bars)
         h.addWidget(self.counter, 1)
-        self.collapsed_view.setToolTip("Mini-Player aufklappen")
-        self.collapsed_view.mousePressEvent = lambda _e: self.expand()
+        self.collapsed_view.setToolTip("Klicken zum Aufklappen · ziehen zum Verschieben")
         self.collapsed_view.setCursor(Qt.CursorShape.PointingHandCursor)
 
         outer.addWidget(self.expanded_view)
@@ -227,9 +229,47 @@ class MiniPlayer(QWidget):
         self._place()
 
     def _place(self):
-        screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
+        screen = (self.anchor and QGuiApplication.screenAt(self.anchor - QPoint(4, 4))) or None
+        if screen is None:  # default corner, on the screen with the mouse
+            self.anchor = None
+            screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
         area = screen.availableGeometry()
-        self.move(area.right() - self.width() - 16 + SHADOW, area.bottom() - self.height() - 16 + SHADOW)
+        corner = self.anchor or QPoint(area.right() - 16, area.bottom() - 16)
+        x = min(max(corner.x() - self.width() + SHADOW, area.left() - SHADOW), area.right() - self.width() + SHADOW)
+        y = min(max(corner.y() - self.height() + SHADOW, area.top() - SHADOW), area.bottom() - self.height() + SHADOW)
+        self.move(x, y)
+
+    def set_anchor(self, anchor):
+        self.anchor = QPoint(*anchor) if anchor else None
+
+    # -- dragging: the card moves like a window; a plain click on the pill expands it --
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._press = (event.globalPosition().toPoint(), self.pos(), False)
+
+    def mouseMoveEvent(self, event):
+        if self._press:
+            start, origin, dragged = self._press
+            delta = event.globalPosition().toPoint() - start
+            if dragged or delta.manhattanLength() > 4:
+                self._press = (start, origin, True)
+                self.move(origin + delta)
+
+    def mouseReleaseEvent(self, _event):
+        if not self._press:
+            return
+        dragged = self._press[2]
+        self._press = None
+        if dragged:
+            self.anchor = self.pos() + QPoint(self.width() - SHADOW, self.height() - SHADOW)
+            self.moved.emit([self.anchor.x(), self.anchor.y()])
+        elif self.collapsed:
+            self.expand()
+
+    def mouseDoubleClickEvent(self, _event):
+        self.anchor = None
+        self.moved.emit(None)
+        self._place()
 
     # -- painting ---------------------------------------------------------------
     def paintEvent(self, _event):

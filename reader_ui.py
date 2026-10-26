@@ -81,6 +81,8 @@ class ReaderApp:
         self.message_timer = QTimer(singleShot=True, interval=1600, timeout=self._end_message)
         self.instance_timer = QTimer(interval=250, timeout=self._check_instance)
         self.instance_timer.start()
+        if not self.config["welcomed"]:
+            QTimer.singleShot(1200, self._welcome)
 
     # -- wiring ---------------------------------------------------------------------
     def _connect_ui(self):
@@ -92,6 +94,8 @@ class ReaderApp:
         h.speed_step.connect(self._speed_step)
         h.volume_toggle.connect(self._toggle_mute)
         h.volume_step.connect(lambda d: self.set_control("volume", self.config["volume"] + d * .05))
+        h.set_anchor(self.config["hud_anchor"])
+        h.moved.connect(self._hud_moved)
         w.control_changed.connect(self.set_control)
         w.choice_changed.connect(self.set_choice)
         w.toggle_changed.connect(self._toggle)
@@ -242,6 +246,19 @@ class ReaderApp:
                 self.hud.hide_player()
             elif self.state != "idle":
                 self.hud.show_player()
+        self.save_timer.start()
+
+    def _hud_moved(self, anchor):
+        self.config["hud_anchor"] = anchor or []
+        self.save_timer.start()
+
+    def _welcome(self):
+        self.tray.showMessage(
+            "Vorleser ist bereit",
+            f"Text markieren und {hotkey_label(self.config['hotkey'])} drücken. "
+            "Ein Klick auf das Symbol im Infobereich öffnet die Einstellungen.",
+            QSystemTrayIcon.MessageIcon.Information, 8000)
+        self.config["welcomed"] = True
         self.save_timer.start()
 
     def _save(self):
