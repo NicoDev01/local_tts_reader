@@ -7,11 +7,13 @@ an den Sprachdienst übertragen. Audioverarbeitung und Wiedergabe erfolgen lokal
 ## Bedienung
 
 - **Desktop-Verknüpfung:** Startet ausschließlich im Tray, ohne Terminal und ohne Einstellungsfenster. Ein erneuter Start erzeugt keine zweite Instanz.
-- **Tray-Symbol anklicken:** Öffnet die Einstellungen. Rechtsklick öffnet das Menü mit Pause, Stopp und Beenden.
+- **Tray-Symbol anklicken:** Öffnet die Einstellungen. Rechtsklick öffnet das Menü mit Pause, Stopp, „Weiterlesen“ (an der zuletzt gestoppten Stelle), „Zuletzt Vorgelesenes wiederholen“ und Beenden. Der letzte Text bleibt nur im Arbeitsspeicher und wird nie gespeichert.
 - **Fenster schließen:** Blendet die Einstellungen aus; die Tastenkürzel bleiben aktiv.
 - **Strg + Alt + V:** Markierten Text übernehmen und vorlesen. Die Tasten danach loslassen. Der Mini-Player erscheint sofort; ohne Markierung meldet er kurz „Kein Text markiert“.
 - **Strg + Alt + Leertaste:** Pause / Weiter.
+- **Strg + Alt + ← / →:** Satz zurück / vor.
 - **Esc:** Vorlesen und ausstehende Spracherzeugung abbrechen.
+- Alle Tastenkürzel lassen sich in den Einstellungen ändern: Feld anklicken, neue Kombination drücken (Rücktaste stellt den Standard wieder her). Einzelne Tasten außer Esc und F-Tasten sowie doppelt belegte Kombinationen werden abgelehnt.
 - **Beenden im Tray-Menü:** Beendet die Anwendung vollständig.
 
 Windows kann das Tray-Symbol im aufklappbaren Bereich hinter dem Pfeil verstecken.
@@ -39,6 +41,8 @@ Zusammenhängende Sätze werden gemeinsam erzeugt (höchstens 80 Wörter pro Anf
 Doppelpunkte, Klammern und Zitate bleiben im Satzkontext. Absatzgrenzen bleiben
 erhalten. Nur an Anfragegrenzen ergänzt der Player eine kurze Pause.
 Das Standardprofil „Warm“ verwendet dezente Klangfilter ohne Kompressor und Limiter.
+Jede Stimme wird mit einem festen, gemessenen Ausgleich auf Killians Pegel gebracht (bis 3,1 dB), damit die
+Lautstärke-Einstellung zu jeder Stimme passt; innerhalb einer Stimme schwankte der Pegel nur um höchstens 1,4 dB.
 Kopierte PDF-Zeilen werden verbunden; explizite Listen, Überschriften und Absätze
 behalten ihre Grenzen. HTML-Zeichenreferenzen werden dekodiert. Die Textaufbereitung
 ist regelbasiert und kann ungewöhnliche Formatierungen weiterhin falsch interpretieren.
@@ -121,6 +125,22 @@ in Word, Browsern oder PDF-Programmen. Diese sollte dort zusätzlich ausprobiert
 | `high_fidelity_tts.py` | Online-Spracherzeugung als Stream, Vorab-Verbindung und Fallback |
 | `clipboard_capture.py` | Frische Textmarkierung und sichere Wiederherstellung |
 | `text_cleaner.py`, `settings.py` | Textnormalisierung und Einstellungen |
+
+Stimmenvergleich: derselbe Text in allen Stimmen, mit Tempo, Lautheitsausgleich und Klangprofil wie in der App
+(Ausgabe in `tests/artifacts/voices/`):
+
+```powershell
+.venv\Scripts\python.exe -B tests\voice_samples.py
+```
+
+Aussprache-Prüfung: Jeder knifflige Fall wird roh und aufbereitet gesprochen und von Whisper zurückgelesen
+(Bericht `tests/artifacts/pronunciation/report.md`). Whisper läuft in einer Wegwerf-Umgebung; das Modell
+(etwa 1,6 GB) liegt in `tests/.whisper_cache/` und kann jederzeit gelöscht werden:
+
+```powershell
+.venv\Scripts\python.exe -B tests\pronunciation_check.py synthesize
+uv run --isolated --no-project --python 3.12 --with faster-whisper==1.2.1 --with soundfile --with soxr python -I tests\pronunciation_check.py transcribe
+```
 
 Gezielte Online-Audioprüfung (synthetischer Testtext; stumme Ausgabe über den echten Audiotreiber):
 
