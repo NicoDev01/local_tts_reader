@@ -683,9 +683,25 @@ _ENGLISH = "|".join(ENGLISH_PARTS)
 _ENGLISH_HYPHEN = re.compile(rf"(?i)\b({_ENGLISH})-(?=\w)|(?<=\w)-({_ENGLISH})\b")
 
 
+# Spellings the German voices pronounce like the English word. Each was spoken alone by
+# Killian, Katja and Conrad and recognized as the English word by Whisper (English mode)
+# in 3 of 3 cases on 2026-10-27; the original spelling sounded German ("Lock in", "Shortcode").
+# "Tray" has no such spelling: every variant was heard as "drei".
+RESPELLINGS = [
+    (re.compile(r"\bclipboard(s?)\b", re.IGNORECASE), r"Clip Board\1"),
+    (re.compile(r"\blogin(s?)\b", re.IGNORECASE), r"Logginn\1"),
+    (re.compile(r"\bshortcut(s?)\b", re.IGNORECASE), r"Shortkatt\1"),
+    (re.compile(r"\bcache\b", re.IGNORECASE), "Kässch"),
+]
+
+
 def speakable(text: str) -> str:
-    """Text as sent to the voice: hyphens next to English words become spaces."""
-    return _ENGLISH_HYPHEN.sub(lambda m: f"{m.group(1)} " if m.group(1) else f" {m.group(2)}", text)
+    """Text as sent to the voice: hyphens next to English words become spaces and a few
+    English words get a spelling the German voices pronounce correctly."""
+    text = _ENGLISH_HYPHEN.sub(lambda m: f"{m.group(1)} " if m.group(1) else f" {m.group(2)}", text)
+    for pattern, spelling in RESPELLINGS:
+        text = pattern.sub(spelling, text)
+    return text
 
 
 def split_sentences(text: str, max_chunk_words: int = 80) -> List[str]:

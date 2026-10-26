@@ -53,3 +53,12 @@ class SpeakableTests(unittest.TestCase):
     def test_tab_is_only_tabelle_before_a_number(self):
         self.assertTrue(clean_text('Siehe Tab. 3.').startswith('Siehe Tabelle 3'))
         self.assertTrue(clean_text('Im Browser-Tab.').endswith('Browser-Tab.'))
+
+
+class RespellingTests(unittest.TestCase):
+    def test_measured_spellings_reach_the_voice_only(self):
+        from text_cleaner import speakable
+        self.assertEqual(speakable('Die Login-Seite.'), 'Die Logginn Seite.')
+        self.assertEqual(speakable('Zwei Shortcuts im Clipboard.'), 'Zwei Shortkatts im Clip Board.')
+        self.assertEqual(speakable('Leere den Cache.'), 'Leere den Kässch.')
+        self.assertEqual(clean_text('Leere den Cache.'), 'Leere den Cache.')  # display unchanged

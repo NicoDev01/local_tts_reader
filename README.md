@@ -59,6 +59,14 @@ Leerzeichen, nur im Text für die Stimme; die Anzeige bleibt unverändert. Whisp
 27.10.2026: vorher 4 von 12 Testsätzen falsch verstanden, danach keiner. Fehlt ein Wort, lässt es
 sich in `ENGLISH_PARTS` ergänzen.
 
+Einzelne Wörter sprechen die deutschen Stimmen trotzdem deutsch aus. Geprüft wurde jedes Wort
+allein, gehört von Whisper im Englisch-Modus (das erkennt einen deutschen Akzent, anders als im
+Satzzusammenhang): Von 31 gängigen Begriffen klangen 5 deutsch. Für vier gibt es eine Schreibweise,
+die alle drei geprüften Stimmen englisch aussprechen; sie steht in `RESPELLINGS` und erreicht nur
+die Stimme: Clipboard → „Clip Board“, Login → „Logginn“, Shortcut → „Shortkatt“, Cache → „Kässch“.
+„Tray“ klang bei den deutschen Stimmen in jeder Schreibweise wie „drei“; nur Florian spricht es
+englisch.
+
 ## Einstellungen
 
 Alles auf einer Seite: Stimme mit Hörprobe, Tempo, Lautstärke, Klang, ein Feld für eigenen
