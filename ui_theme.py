@@ -3,8 +3,9 @@ from pathlib import Path
 import tempfile
 import winreg
 
-from PySide6.QtCore import QByteArray, QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QFontDatabase, QGuiApplication, QIcon, QPainter, QPixmap
+from PySide6.QtCore import QByteArray, QPointF, QRectF, Qt
+from PySide6.QtGui import (QColor, QFont, QFontDatabase, QGuiApplication, QIcon, QImage,
+                           QLinearGradient, QPainter, QPixmap)
 from PySide6.QtSvg import QSvgRenderer
 
 LIGHT = dict(
@@ -62,7 +63,7 @@ def stylesheet(c):
     return f"""
     * {{ color: {c['text']}; font-size: 10pt; }}
     QWidget#SettingsWindow, QScrollArea, QScrollArea > QWidget > QWidget {{ background: {c['window']}; }}
-    QFrame#Card {{ background: {c['card']}; border: 1px solid {c['border']}; border-radius: 12px; }}
+    QFrame#Card {{ background: {c['card']}; border: 1px solid {c['border']}; border-radius: 20px; }}
     QFrame#Divider {{ background: {c['border']}; border: none; max-height: 1px; min-height: 1px; }}
     QLabel {{ background: transparent; }}
     QLabel#Title {{ font-size: 17pt; font-weight: 600; }}
@@ -70,14 +71,14 @@ def stylesheet(c):
     QLabel#SectionLabel {{ font-size: 9pt; font-weight: 600; padding-left: 4px; }}
     QLabel#Footer {{ font-size: 8.5pt; }}
     QLabel#Value {{ color: {c['secondary']}; min-width: 44px; }}
-    QLabel#KeyCap {{ background: {c['control']}; border-radius: 5px; padding: 2px 7px; color: {c['secondary']}; font-size: 8.5pt; }}
-    QComboBox {{ background: {c['control']}; border: none; border-radius: 8px; padding: 5px 28px 5px 10px; min-width: 150px; }}
+    QLabel#KeyCap {{ background: {c['control']}; border-radius: 8px; padding: 2px 9px; min-height: 16px; color: {c['secondary']}; font-size: 8.5pt; }}
+    QComboBox {{ background: {c['control']}; border: none; border-radius: 15px; padding: 6px 30px 6px 14px; min-width: 150px; min-height: 18px; }}
     QComboBox:hover {{ background: {c['track']}; }}
     QComboBox::drop-down {{ border: none; width: 24px; }}
     QComboBox::down-arrow {{ image: url("{icon_file('chevron-down', c['secondary'])}"); width: 12px; height: 12px;
         margin-right: 10px; }}
-    QComboBox QAbstractItemView {{ background: {c['card']}; border: 1px solid {c['border']}; border-radius: 8px;
-        padding: 4px; outline: none; selection-background-color: {c['control']}; selection-color: {c['text']}; }}
+    QComboBox QAbstractItemView {{ background: {c['card']}; border: 1px solid {c['border']}; border-radius: 14px;
+        padding: 6px; outline: none; selection-background-color: {c['control']}; selection-color: {c['text']}; }}
     QSlider::groove:horizontal {{ height: 4px; background: {c['track']}; border-radius: 2px; }}
     QSlider::sub-page:horizontal {{ background: {c['primary']}; border-radius: 2px; }}
     QSlider::handle:horizontal {{ background: {c['card']}; border: 1px solid {c['border']}; width: 16px; height: 16px;
@@ -87,11 +88,11 @@ def stylesheet(c):
         min-height: 18px; padding: 5px 18px; font-weight: 600; }}
     QPushButton#Primary:hover {{ background: {c['secondary']}; }}
     QScrollBar:vertical {{ background: transparent; width: 8px; margin: 2px; }}
-    QScrollBar::handle:vertical {{ background: {c['track']}; border-radius: 3px; min-height: 30px; }}
+    QScrollBar::handle:vertical {{ background: {c['track']}; border-radius: 2px; min-height: 30px; }}
     QScrollBar::add-line, QScrollBar::sub-line, QScrollBar::add-page, QScrollBar::sub-page {{ height: 0; background: none; }}
-    QToolTip {{ background: {c['card']}; color: {c['text']}; border: 1px solid {c['border']}; border-radius: 6px; padding: 4px 8px; }}
-    QMenu {{ background: {c['card']}; border: 1px solid {c['border']}; border-radius: 8px; padding: 4px; }}
-    QMenu::item {{ padding: 6px 18px; border-radius: 6px; }}
+    QToolTip {{ background: {c['card']}; color: {c['text']}; border: 1px solid {c['border']}; border-radius: 10px; padding: 5px 10px; }}
+    QMenu {{ background: {c['card']}; border: 1px solid {c['border']}; border-radius: 14px; padding: 6px; }}
+    QMenu::item {{ padding: 7px 20px; border-radius: 10px; }}
     QMenu::item:selected {{ background: {c['control']}; }}
     QMenu::separator {{ height: 1px; background: {c['border']}; margin: 4px 8px; }}
     """
@@ -166,8 +167,36 @@ def tray_icon():
     return icon
 
 
+def app_icon_image(size):
+    """Rounded square with a violet gradient, soft top light and white sound waves."""
+    image = QImage(size, size, QImage.Format.Format_ARGB32_Premultiplied)
+    image.fill(Qt.GlobalColor.transparent)
+    p = QPainter(image)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    rect = QRectF(0, 0, size, size).adjusted(size * .04, size * .04, -size * .04, -size * .04)
+    radius = rect.width() * .2237  # close to the iOS / macOS app icon curve
+    fill = QLinearGradient(rect.topLeft(), rect.bottomRight())
+    fill.setColorAt(0, QColor("#6D6AF8"))
+    fill.setColorAt(.55, QColor("#8B5CF6"))
+    fill.setColorAt(1, QColor("#C04CE0"))
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(fill)
+    p.drawRoundedRect(rect, radius, radius)
+    light = QLinearGradient(rect.topLeft(), QPointF(rect.left(), rect.center().y()))
+    light.setColorAt(0, QColor(255, 255, 255, 64))
+    light.setColorAt(1, QColor(255, 255, 255, 0))
+    p.setBrush(light)
+    p.drawRoundedRect(rect, radius, radius)
+    small = size <= 24  # fewer pixels need bolder strokes to stay legible
+    glyph = rect.width() * (.74 if small else .62)
+    box = QRectF(rect.center().x() - glyph / 2, rect.center().y() - glyph / 2, glyph, glyph)
+    paint_icon(p, "audio-lines", box, QColor("#FFFFFF"), stroke=3.4 if small else 2.4)
+    p.end()
+    return image
+
+
 def app_icon():
     icon = QIcon()
-    for size in (16, 32, 48, 64, 256):
-        icon.addPixmap(icon_pixmap("audio-lines", size, QColor("#FFFFFF"), QColor("#1D1D1F"), ratio=1.0))
+    for size in (16, 20, 24, 32, 48, 64, 128, 256):
+        icon.addPixmap(QPixmap.fromImage(app_icon_image(size)))
     return icon

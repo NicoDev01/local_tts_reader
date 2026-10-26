@@ -14,7 +14,8 @@ if (-not $SkipDependencies) {
 }
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $launcher = Join-Path $projectRoot 'TTS Vorleser.exe'
-& $compiler /nologo /target:winexe /optimize+ /reference:System.Windows.Forms.dll "/out:$launcher" (Join-Path $projectRoot 'launcher.cs')
+$icon = Join-Path $projectRoot 'assets\vorleser.ico'
+& $compiler /nologo /target:winexe /optimize+ /reference:System.Windows.Forms.dll "/win32icon:$icon" "/out:$launcher" (Join-Path $projectRoot 'launcher.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Windows-Launcher konnte nicht erstellt werden.' }
 & (Join-Path $projectRoot 'create_shortcut.ps1')
 Write-Output 'Installation abgeschlossen. TTS Vorleser startet im Infobereich.'

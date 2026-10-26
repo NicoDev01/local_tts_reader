@@ -105,10 +105,10 @@ class Segmented(QWidget):
         super().__init__(parent)
         self.options = list(options.items())  # [(key, label)]
         self.value = self.options[0][0]
-        self.setFixedHeight(28)
+        self.setFixedHeight(30)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFont(ui_font(9))
-        widths = [self.fontMetrics().horizontalAdvance(label) + 24 for _, label in self.options]
+        widths = [self.fontMetrics().horizontalAdvance(label) + 28 for _, label in self.options]
         self.setFixedWidth(sum(widths) + 4)
         self._widths = widths
 
@@ -133,12 +133,13 @@ class Segmented(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(Theme.color("control"))
-        p.drawRoundedRect(QRectF(self.rect()), 8, 8)
+        radius = self.height() / 2
+        p.drawRoundedRect(QRectF(self.rect()), radius, radius)
         for key, label, rect in self._segments():
             if key == self.value:
                 p.setPen(Qt.PenStyle.NoPen)
                 p.setBrush(Theme.color("card"))
-                p.drawRoundedRect(rect, 6, 6)
+                p.drawRoundedRect(rect, rect.height() / 2, rect.height() / 2)
             p.setPen(Theme.color("text" if key == self.value else "secondary"))
             p.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
 
@@ -236,11 +237,11 @@ class HotkeyField(QWidget):
         if self.active:
             p.setPen(Theme.color("primary"))
             p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawRoundedRect(QRectF(self.rect()).adjusted(.5, .5, -.5, -.5), 8, 8)
+            p.drawRoundedRect(QRectF(self.rect()).adjusted(.5, .5, -.5, -.5), self.height() / 2, self.height() / 2)
         elif self.underMouse():
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(Theme.color("hover"))
-            p.drawRoundedRect(QRectF(self.rect()), 8, 8)
+            p.drawRoundedRect(QRectF(self.rect()), self.height() / 2, self.height() / 2)
 
     def enterEvent(self, event):
         self.update()

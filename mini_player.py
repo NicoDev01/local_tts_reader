@@ -236,7 +236,7 @@ class MiniPlayer(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         card = QRectF(self.rect()).adjusted(SHADOW, SHADOW, -SHADOW, -SHADOW)
-        radius = card.height() / 2 if self.collapsed else 18
+        radius = card.height() / 2 if self.collapsed else 26
         shadow_alpha = .45 if Theme.dark() else .10
         for i in range(SHADOW, 0, -2):  # soft layered shadow, a little lower than the card
             color = QColor(0, 0, 0)

@@ -8,5 +8,5 @@ $shortcut.TargetPath = $launcher
 $shortcut.Arguments = ''
 $shortcut.WorkingDirectory = $PSScriptRoot
 $shortcut.Description = 'TTS Vorleser im Infobereich – Strg + Alt + V'
-$shortcut.IconLocation = 'shell32.dll,168'
+$shortcut.IconLocation = (Join-Path $PSScriptRoot 'assets\vorleser.ico') + ',0'
 $shortcut.Save()

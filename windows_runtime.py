@@ -56,7 +56,20 @@ def prevent_activation(hwnd):
     return hwnd
 
 
-def set_dark_title_bar(hwnd, dark):
-    """Match the native title bar to the app theme (DWMWA_USE_IMMERSIVE_DARK_MODE)."""
-    value = ctypes.c_int(1 if dark else 0)
-    dwm.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(value), ctypes.sizeof(value))
+def _dwm(hwnd, attribute, value):
+    value = ctypes.c_int(value)
+    dwm.DwmSetWindowAttribute(hwnd, attribute, ctypes.byref(value), ctypes.sizeof(value))
+
+
+def _colorref(hex_color):
+    r, g, b = (int(hex_color[i:i + 2], 16) for i in (1, 3, 5))
+    return r | g << 8 | b << 16
+
+
+def set_window_chrome(hwnd, dark, background, text):
+    """Blend the native title bar into the window (Windows 11; ignored on older systems)."""
+    _dwm(hwnd, 20, 1 if dark else 0)              # DWMWA_USE_IMMERSIVE_DARK_MODE
+    _dwm(hwnd, 33, 2)                             # DWMWA_WINDOW_CORNER_PREFERENCE: round
+    _dwm(hwnd, 35, _colorref(background))         # DWMWA_CAPTION_COLOR
+    _dwm(hwnd, 34, _colorref(background))         # DWMWA_BORDER_COLOR
+    _dwm(hwnd, 36, _colorref(text))               # DWMWA_TEXT_COLOR

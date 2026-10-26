@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QPlainTextEdit, Q
 from settings import DEFAULTS, PROFILES, VOICES
 from ui_theme import Theme, app_icon
 from ui_widgets import HotkeyField, IconButton, Segmented, Switch, card, divider
-from windows_runtime import set_dark_title_bar
+from windows_runtime import set_window_chrome
 
 THEMES = {"system": "System", "light": "Hell", "dark": "Dunkel"}
 HOTKEY_LABELS = {"hotkey": "Markierten Text vorlesen", "pause_hotkey": "Pause / Weiter",
@@ -83,7 +83,7 @@ class SettingsWindow(QWidget):
         QShortcut(QKeySequence("Ctrl+Return"), self.editor, activated=self._read_editor)
         box = card()
         bl = QVBoxLayout(box)
-        bl.setContentsMargins(12, 8, 12, 12)
+        bl.setContentsMargins(16, 10, 12, 12)
         bl.addWidget(self.editor)
         bl.addWidget(read, 0, Qt.AlignmentFlag.AlignRight)
         self._label(v, "Eigener Text")
@@ -131,13 +131,13 @@ class SettingsWindow(QWidget):
         self._label(layout, title)
         box = card()
         bl = QVBoxLayout(box)
-        bl.setContentsMargins(14, 2, 10, 2)
+        bl.setContentsMargins(18, 3, 12, 3)
         bl.setSpacing(0)
         for i, (name, widgets) in enumerate(rows):
             if i:
                 bl.addWidget(divider())
             row = QHBoxLayout()
-            row.setContentsMargins(0, 9, 0, 9)
+            row.setContentsMargins(0, 11, 0, 11)
             row.addWidget(QLabel(name))
             row.addStretch(1)
             for widget in widgets:
@@ -202,13 +202,16 @@ class SettingsWindow(QWidget):
         self.autostart.setChecked(enabled)
         self.autostart.blockSignals(False)
 
+    def _chrome(self):
+        set_window_chrome(int(self.winId()), Theme.dark(), Theme.colors["window"], Theme.colors["text"])
+
     def refresh_theme(self):
-        set_dark_title_bar(int(self.winId()), Theme.dark())
+        self._chrome()
         for widget in self.findChildren(QWidget):
             widget.update()
 
     def showEvent(self, event):
-        set_dark_title_bar(int(self.winId()), Theme.dark())
+        self._chrome()
         super().showEvent(event)
 
     def closeEvent(self, event):
