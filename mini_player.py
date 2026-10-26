@@ -1,0 +1,348 @@
+"""Floating mini-player: current sentence, sentence navigation, tempo and volume.
+
+It never takes focus, so clicking it leaves the document's selection alone.
+"""
+import math
+
+from PySide6.QtCore import (QEasingCurve, QParallelAnimationGroup, QPoint, QPropertyAnimation, QRectF,
+                            Qt, QTimer, Signal)
+from PySide6.QtGui import QColor, QCursor, QFont, QFontMetrics, QGuiApplication, QPainter, QPainterPath
+from PySide6.QtWidgets import QAbstractButton, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+
+from ui_theme import Theme, ui_font
+from ui_widgets import IconButton
+from windows_runtime import prevent_activation
+
+SHADOW = 16
+EXPANDED = (340, 118)
+COLLAPSED = (148, 44)
+
+
+def elide_lines(text, metrics, width, lines=2):
+    """Wrap to at most ``lines`` lines, ending with an ellipsis if cut."""
+    words, rows, row = text.split(), [], ""
+    for word in words:
+        candidate = f"{row} {word}".strip()
+        if metrics.horizontalAdvance(candidate) <= width or not row:
+            row = candidate
+            continue
+        rows.append(row)
+        row = word
+        if len(rows) == lines:
+            break
+    if len(rows) < lines and row:
+        rows.append(row)
+        row = ""
+    if len(rows) == lines and (row or len(" ".join(rows).split()) < len(words)):
+        rows[-1] = metrics.elidedText(rows[-1] + " …", Qt.TextElideMode.ElideRight, width)
+        if not rows[-1].endswith("…"):
+            rows[-1] = rows[-1].rstrip(" .,;:") + " …"
+    return "\n".join(rows)
+
+
+class Chip(QAbstractButton):
+    """Small pill with text; the wheel changes the value in fine steps."""
+    stepped = Signal(int)
+
+    def __init__(self, tooltip, parent=None):
+        super().__init__(parent)
+        self.setFont(ui_font(8.5, QFont.Weight.DemiBold))
+        self.setFixedHeight(24)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.setToolTip(tooltip)
+
+    def setText(self, text):
+        super().setText(text)
+        self.setFixedWidth(self.fontMetrics().horizontalAdvance(text) + 18)
+        self.update()
+
+    def wheelEvent(self, event):
+        self.stepped.emit(1 if event.angleDelta().y() > 0 else -1)
+
+    def paintEvent(self, _event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(Theme.color("track" if self.underMouse() else "control"))
+        p.drawRoundedRect(QRectF(self.rect()), 12, 12)
+        p.setPen(Theme.color("text"))
+        p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self.text())
+
+
+class ProgressLine(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.value = 0.0
+        self.setFixedHeight(3)
+
+    def set_value(self, value):
+        value = min(1.0, max(0.0, value))
+        if abs(value - self.value) > .001:
+            self.value = value
+            self.update()
+
+    def paintEvent(self, _event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(Theme.color("track"))
+        p.drawRoundedRect(QRectF(self.rect()), 1.5, 1.5)
+        if self.value > 0:
+            p.setBrush(Theme.color("primary"))
+            p.drawRoundedRect(QRectF(0, 0, max(3.0, self.width() * self.value), 3), 1.5, 1.5)
+
+
+class LevelBars(QWidget):
+    """Four calm bars that move while speech is playing."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(20, 16)
+        self.phase, self.active = 0.0, False
+        self.timer = QTimer(self, interval=60, timeout=self._tick)
+
+    def set_active(self, active):
+        self.active = active
+        self.timer.start() if active else self.timer.stop()
+        self.update()
+
+    def _tick(self):
+        self.phase += .35
+        self.update()
+
+    def paintEvent(self, _event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(Theme.color("secondary"))
+        for i in range(4):
+            level = .35 + .65 * abs(math.sin(self.phase * (1 + i * .37) + i)) if self.active else .3
+            h = max(3.0, 16 * level)
+            p.drawRoundedRect(QRectF(i * 5.5, 16 - h, 3, h), 1.5, 1.5)
+
+
+class MiniPlayer(QWidget):
+    toggle_pause = Signal()
+    stop = Signal()
+    previous = Signal()
+    next = Signal()
+    speed_step = Signal(int)
+    volume_toggle = Signal()
+    volume_step = Signal(int)
+
+    def __init__(self):
+        super().__init__(None, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
+                         | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.WindowDoesNotAcceptFocus)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.setWindowTitle("Vorleser")
+        self.collapsed = False
+        self.paused = False
+        self._text, self._is_status = "", True
+        self._build()
+        self._apply_size()
+        self._fade = None
+
+    # -- layout -----------------------------------------------------------------
+    def _build(self):
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(SHADOW, SHADOW, SHADOW, SHADOW)
+
+        self.expanded_view = QWidget()
+        v = QVBoxLayout(self.expanded_view)
+        v.setContentsMargins(16, 12, 10, 10)
+        v.setSpacing(8)
+        top = QHBoxLayout()
+        top.setSpacing(2)
+        self.sentence = QLabel()
+        self.sentence.setFont(ui_font(10))
+        self.sentence.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        self.sentence.setFixedHeight(QFontMetrics(ui_font(10)).lineSpacing() * 2 + 2)
+        top.addWidget(self.sentence, 1)
+        self.collapse_btn = IconButton("minus", 22, 13, tooltip="Einklappen")
+        self.close_btn = IconButton("x", 22, 13, tooltip="Vorlesen beenden (Esc)")
+        self.collapse_btn.clicked.connect(self.collapse)
+        self.close_btn.clicked.connect(self.stop)
+        for b in (self.collapse_btn, self.close_btn):
+            top.addWidget(b, 0, Qt.AlignmentFlag.AlignTop)
+        v.addLayout(top)
+        self.progress = ProgressLine()
+        progress_row = QHBoxLayout()
+        progress_row.setContentsMargins(0, 0, 6, 0)
+        progress_row.addWidget(self.progress)
+        v.addLayout(progress_row)
+
+        controls = QHBoxLayout()
+        controls.setSpacing(4)
+        self.prev_btn = IconButton("skip-back", 30, 14, tooltip="Vorheriger Satz")
+        self.play_btn = IconButton("pause", 36, 15, filled=True, tooltip="Pause / Weiter (Strg + Alt + Leertaste)")
+        self.next_btn = IconButton("skip-forward", 30, 14, tooltip="Nächster Satz")
+        self.prev_btn.clicked.connect(self.previous)
+        self.play_btn.clicked.connect(self.toggle_pause)
+        self.next_btn.clicked.connect(self.next)
+        for b in (self.prev_btn, self.play_btn, self.next_btn):
+            controls.addWidget(b)
+        self.remaining = QLabel()
+        self.remaining.setFont(ui_font(8.5))
+        self.remaining.setObjectName("Secondary")
+        controls.addSpacing(6)
+        controls.addWidget(self.remaining)
+        controls.addStretch(1)
+        self.speed = Chip("Tempo: klicken für die nächste Stufe, Mausrad für feine Schritte")
+        self.speed.clicked.connect(lambda: self.speed_step.emit(0))
+        self.speed.stepped.connect(self.speed_step)
+        controls.addWidget(self.speed)
+        self.volume = IconButton("volume", 30, 15, tooltip="Ton aus / an · Mausrad: Lautstärke")
+        self.volume.clicked.connect(self.volume_toggle)
+        self.volume.wheelEvent = lambda e: self.volume_step.emit(1 if e.angleDelta().y() > 0 else -1)
+        controls.addWidget(self.volume)
+        v.addLayout(controls)
+
+        self.collapsed_view = QWidget()
+        h = QHBoxLayout(self.collapsed_view)
+        h.setContentsMargins(8, 8, 14, 8)
+        h.setSpacing(10)
+        self.mini_play = IconButton("pause", 28, 12, filled=True, tooltip="Pause / Weiter")
+        self.mini_play.clicked.connect(self.toggle_pause)
+        self.bars = LevelBars()
+        self.counter = QLabel()
+        self.counter.setFont(ui_font(8.5))
+        self.counter.setObjectName("Secondary")
+        h.addWidget(self.mini_play)
+        h.addWidget(self.bars)
+        h.addWidget(self.counter, 1)
+        self.collapsed_view.setToolTip("Mini-Player aufklappen")
+        self.collapsed_view.mousePressEvent = lambda _e: self.expand()
+        self.collapsed_view.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        outer.addWidget(self.expanded_view)
+        outer.addWidget(self.collapsed_view)
+
+    def _apply_size(self):
+        self.expanded_view.setVisible(not self.collapsed)
+        self.collapsed_view.setVisible(self.collapsed)
+        w, h = COLLAPSED if self.collapsed else EXPANDED
+        self.setFixedSize(w + 2 * SHADOW, h + 2 * SHADOW)
+        self._place()
+
+    def _place(self):
+        screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
+        area = screen.availableGeometry()
+        self.move(area.right() - self.width() - 16 + SHADOW, area.bottom() - self.height() - 16 + SHADOW)
+
+    # -- painting ---------------------------------------------------------------
+    def paintEvent(self, _event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        card = QRectF(self.rect()).adjusted(SHADOW, SHADOW, -SHADOW, -SHADOW)
+        radius = card.height() / 2 if self.collapsed else 18
+        shadow_alpha = .45 if Theme.dark() else .10
+        for i in range(SHADOW, 0, -2):  # soft layered shadow, a little lower than the card
+            color = QColor(0, 0, 0)
+            color.setAlphaF(shadow_alpha * (1 - i / SHADOW) ** 2 / 3)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(color)
+            p.drawRoundedRect(card.adjusted(-i, -i + 4, i, i + 4), radius + i, radius + i)
+        path = QPainterPath()
+        path.addRoundedRect(card, radius, radius)
+        p.fillPath(path, Theme.color("card"))
+        p.setPen(Theme.color("border"))
+        p.drawPath(path)
+
+    # -- state ------------------------------------------------------------------
+    def refresh_theme(self):
+        self._render_text()
+        self.update()
+        for w in self.findChildren(QWidget):
+            w.update()
+
+    def set_text(self, text, status=False):
+        self._text, self._is_status = text, status
+        self._render_text()
+
+    def _render_text(self):
+        color = Theme.colors["secondary" if self._is_status else "text"]
+        self.sentence.setStyleSheet(f"color: {color};")
+        width = EXPANDED[0] - 16 - 10 - 2 * 24
+        self.sentence.setText(elide_lines(self._text, QFontMetrics(self.sentence.font()), width))
+
+    def set_paused(self, paused):
+        self.paused = paused
+        icon = "play" if paused else "pause"
+        self.play_btn.set_icon(icon)
+        self.mini_play.set_icon(icon)
+        self.bars.set_active(not paused and self.isVisible())
+
+    def set_progress(self, value, counter=""):
+        self.progress.set_value(value)
+        self.counter.setText(counter)
+
+    def set_remaining(self, seconds):
+        if seconds is None:
+            self.remaining.setText("")
+        else:
+            seconds = int(round(seconds))
+            self.remaining.setText(f"−{seconds // 60}:{seconds % 60:02d}")
+
+    def set_controls(self, speed, volume):
+        self.speed.setText(f"{speed:.2f}".rstrip("0").rstrip(".").replace(".", ",") + "×")
+        self.volume.set_icon("volume-x" if volume <= .01 else "volume")
+
+    def set_navigation(self, previous, following):
+        self.prev_btn.setEnabled(previous)
+        self.next_btn.setEnabled(following)
+
+    # -- visibility -------------------------------------------------------------
+    def collapse(self):
+        self.collapsed = True
+        self._apply_size()
+        self.update()
+
+    def expand(self):
+        self.collapsed = False
+        self._apply_size()
+        self.update()
+
+    def show_player(self):
+        if self.isVisible() and self.windowOpacity() > .99:
+            return
+        if self._fade:
+            self._fade.stop()
+        self._place()
+        end = self.pos()
+        self.setWindowOpacity(0.0)
+        self.show()
+        prevent_activation(int(self.winId()))
+        group = QParallelAnimationGroup(self)
+        fade = QPropertyAnimation(self, b"windowOpacity", group)
+        fade.setDuration(160)
+        fade.setEndValue(1.0)
+        slide = QPropertyAnimation(self, b"pos", group)
+        slide.setDuration(220)
+        slide.setStartValue(end + QPoint(0, 10))
+        slide.setEndValue(end)
+        slide.setEasingCurve(QEasingCurve.Type.OutCubic)
+        group.addAnimation(fade)
+        group.addAnimation(slide)
+        self._fade = group
+        group.start()
+        self.bars.set_active(not self.paused)
+
+    def hide_player(self):
+        if not self.isVisible():
+            return
+        if self._fade:
+            self._fade.stop()
+        anim = QPropertyAnimation(self, b"windowOpacity", self)
+        anim.setDuration(140)
+        anim.setEndValue(0.0)
+
+        def done():
+            self.hide()
+            if self.collapsed:
+                self.expand()
+        anim.finished.connect(done)
+        self._fade = anim
+        anim.start()
+        self.bars.set_active(False)

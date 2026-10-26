@@ -1,0 +1,41 @@
+import unittest
+
+from settings import VOICES, validate
+from text_cleaner import clean_text, split_sentences
+
+
+class GermanTextTests(unittest.TestCase):
+    def test_mixed_case_abbreviations_stay_intact(self):
+        self.assertIn('Mehrwertsteuer', clean_text('Preis inkl. MwSt. Danach mehr.'))
+        self.assertIn('G m b H', clean_text('Die XY GmbH meldet Gewinne.'))
+        self.assertIn('S t G B', clean_text('Laut StGB gilt das.'))
+        self.assertIn('My A P I Client', clean_text('Der MyAPIClient läuft.'))
+
+    def test_abbreviation_keeps_sentence_end(self):
+        self.assertEqual(split_sentences('Preis inkl. MwSt. Danach mehr.')[0],
+                         'Preis inklusive Mehrwertsteuer. Danach mehr.')
+        self.assertTrue(clean_text('Wir sehen uns usw.').endswith('und so weiter.'))
+        self.assertIn('Doktor Müller', clean_text('Herr Dr. Müller kam.'))
+
+    def test_street_suffix_and_year_span(self):
+        self.assertIn('Hauptstraße 12', clean_text('Hauptstr. 12 in München.'))
+        self.assertIn('2024 bis 25', clean_text('Saison 2024/25.'))
+        self.assertIn('10 geteilt durch 5', clean_text('Rechne 10/5.'))
+
+    def test_numbered_list_items_stay_separate(self):
+        self.assertEqual(clean_text('1. Einkaufen\n2. Kochen'), 'Erstens, Einkaufen. Zweitens, Kochen.')
+
+    def test_windows_path_is_read_as_parts(self):
+        self.assertEqual(clean_text(r'Liegt in C:\Users\Max\bericht.pdf'),
+                         'Liegt in Laufwerk C, Users, Max, bericht')
+
+
+class VoiceTests(unittest.TestCase):
+    def test_retired_voice_falls_back_to_default(self):
+        self.assertNotIn('de-DE-RalfNeural', VOICES)
+        self.assertEqual(validate({'voice': 'de-DE-RalfNeural'})['voice'], 'de-DE-KillianNeural')
+        self.assertEqual(validate({'voice': 'de-AT-JonasNeural'})['voice'], 'de-AT-JonasNeural')
+
+
+if __name__ == '__main__':
+    unittest.main()

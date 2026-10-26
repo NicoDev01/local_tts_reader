@@ -1,0 +1,11 @@
+# Lokale Umgebung und Laufzeitdaten
+.venv/
+__pycache__/
+reader.log*
+config.json
+*.json.tmp
+# Build-Ausgabe von setup.ps1
+TTS Vorleser.exe
+# Erzeugte Prüfergebnisse, Hörproben und Modell-Cache
+tests/artifacts/
+tests/.whisper_cache/
