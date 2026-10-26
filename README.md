@@ -22,7 +22,12 @@ Es lässt sich bei Bedarf aus diesem Bereich in die sichtbare Taskleiste ziehen.
 ## Mini-Player
 
 Der Mini-Player erscheint unten rechts und nimmt dem Dokument nie den Fokus. Er zeigt
-den Satz, der gerade gesprochen wird, den Fortschritt und die ungefähre Restzeit.
+den Satz, der gerade gesprochen wird: bereits gesprochene Wörter voll, das aktuelle Wort in
+Violett, kommende Wörter gedämpft. Dazu Fortschritt und ungefähre Restzeit.
+
+- **Verschieben:** Mini-Player oder eingeklappte Pille mit der Maus ziehen; die Position bleibt gespeichert. Doppelklick setzt ihn in die Ecke zurück.
+- **Pause** blendet über 80 ms aus und beim Fortsetzen wieder ein, statt mitten im Wort abzuschneiden.
+- **Buch-Symbol:** öffnet die Leseansicht.
 
 - **Satz zurück / vor:** Wie bei einem Musikplayer springt „zurück“ zuerst an den Anfang des aktuellen Satzes (nach mehr als 2 s) und erst sonst einen Satz weiter zurück. Ein Sprung braucht etwa 0,6 s.
 - **Tempo-Chip:** Klick wechselt 1× → 1,25× → 1,5× → 1,75× → 2×; das Mausrad ändert in 0,05er-Schritten. Bereich **0,70× bis 2,00×**, ohne beabsichtigte Änderung der Tonhöhe.
@@ -30,6 +35,20 @@ den Satz, der gerade gesprochen wird, den Fortschritt und die ungefähre Restzei
 - **Minus** klappt ihn zu einer Pille mit Pause-Taste und Satzzähler ein; ein Klick auf die Pille klappt ihn auf. **×** beendet das Vorlesen.
 - Die Satzanzeige nutzt die Satzzeitpunkte, die der Sprachdienst mitliefert; die Restzeit ist eine Schätzung (2,5 Wörter/s bei 1×).
 - Tempo und Lautstärke wirken auch auf bereits geladenes Audio. Live-Tempowechsel werden im Hintergrund berechnet und bevorzugt in einer Sprechpause überblendet (höchstens 350 ms Wartezeit).
+
+## Leseansicht
+
+Ein ruhiges Fenster mit dem ganzen Text (Buch-Symbol im Mini-Player oder Tray-Menü). Gelesene
+Sätze sind gedämpft, der aktuelle Satz ist hinterlegt, das aktuelle Wort violett; die Ansicht
+scrollt mit. Ein Klick auf einen Satz liest dort weiter, auch nachdem das Vorlesen beendet ist.
+
+## Englische Begriffe
+
+Der kostenlose Microsoft-Dienst nimmt keine SSML-Auszeichnungen an (`<lang>`, `<phoneme>` und
+`<sub>` wurden am 26.10.2026 getestet und abgelehnt). Wie englische Begriffe klingen, hängt daher
+allein von der Stimme ab. Eine Kontrolle mit Whisper ergab: Gängiges Denglisch wie „Pull Request“,
+„Deployment“ oder „ready for review“ wurde bei allen geprüften Stimmen richtig verstanden.
+Die Hörproben `tests/artifacts/voices/<Stimme> Denglisch.wav` zeigen den Akzent im Vergleich.
 
 ## Einstellungen
 
@@ -120,6 +139,8 @@ in Word, Browsern oder PDF-Programmen. Diese sollte dort zusätzlich ausprobiert
 | `reader_ui.py` | Tray, Tastenkürzel, Ablaufsteuerung zwischen Oberfläche und Wiedergabe |
 | `mini_player.py`, `settings_window.py` | Mini-Player mit Satznavigation; Einstellungen auf einer Seite (PySide6) |
 | `ui_theme.py`, `ui_widgets.py` | Farben hell/dunkel, Stylesheet, Lucide-Symbole (ISC), Schalter und Bedienelemente |
+| `reading_view.py` | Leseansicht mit Satz- und Wortmarkierung, Klick-Navigation |
+| `assets/`, `tools/make_icon.py` | App-Icon; das Skript erzeugt `assets/vorleser.ico` aus der Zeichnung in `ui_theme.py` |
 | `playback.py` | Vorleseaufträge, begrenzter Puffer, Abbruch und Netzwerk-Loop |
 | `audio_player.py` | Klangverarbeitung, Live-Tempo, Live-Lautstärke und Ausgabe |
 | `high_fidelity_tts.py` | Online-Spracherzeugung als Stream, Vorab-Verbindung und Fallback |
@@ -132,6 +153,8 @@ Stimmenvergleich: derselbe Text in allen Stimmen, mit Tempo, Lautheitsausgleich 
 ```powershell
 .venv\Scripts\python.exe -B tests\voice_samples.py
 ```
+
+Liegt bereits ein Whisper-Modell vor (zum Beispiel über OpenWhispr), kann dessen Server die Prüfung ohne Download übernehmen.
 
 Aussprache-Prüfung: Jeder knifflige Fall wird roh und aufbereitet gesprochen und von Whisper zurückgelesen
 (Bericht `tests/artifacts/pronunciation/report.md`). Whisper läuft in einer Wegwerf-Umgebung; das Modell
