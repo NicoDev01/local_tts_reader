@@ -4,12 +4,14 @@ from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QScrollArea,
                                QSlider, QVBoxLayout, QWidget)
 
-from settings import PROFILES, VOICES
+from settings import DEFAULTS, PROFILES, VOICES
 from ui_theme import Theme, app_icon
-from ui_widgets import IconButton, KeyCaps, Segmented, Switch, card, divider
+from ui_widgets import HotkeyField, IconButton, Segmented, Switch, card, divider
 from windows_runtime import set_dark_title_bar
 
 THEMES = {"system": "System", "light": "Hell", "dark": "Dunkel"}
+HOTKEY_LABELS = {"hotkey": "Markierten Text vorlesen", "pause_hotkey": "Pause / Weiter",
+                 "prev_hotkey": "Satz zurück", "next_hotkey": "Satz vor", "stop_hotkey": "Vorlesen beenden"}
 
 
 class SettingsWindow(QWidget):
@@ -18,6 +20,8 @@ class SettingsWindow(QWidget):
     toggle_changed = Signal(str, bool)       # hud_enabled / autostart
     preview_voice = Signal()
     read_text = Signal(str)
+    hotkey_changed = Signal(str, str)
+    hotkey_recording = Signal(bool)
 
     def __init__(self, config):
         super().__init__()
@@ -101,11 +105,15 @@ class SettingsWindow(QWidget):
             ("Darstellung", [self.theme]),
         ])
 
-        self._section(v, "Tastenkürzel", [
-            ("Markierten Text vorlesen", [KeyCaps(c["hotkey"])]),
-            ("Pause / Weiter", [KeyCaps(c["pause_hotkey"])]),
-            ("Vorlesen beenden", [KeyCaps(c["stop_hotkey"])]),
-        ])
+        self.hotkeys = {}
+        rows = []
+        for key, label in HOTKEY_LABELS.items():
+            field = HotkeyField(c[key], DEFAULTS[key])
+            field.recorded.connect(lambda combo, k=key: self.hotkey_changed.emit(k, combo))
+            field.recording.connect(self.hotkey_recording)
+            self.hotkeys[key] = field
+            rows.append((label, [field]))
+        self._section(v, "Tastenkürzel", rows)
 
         footer = QLabel("Die Sprache wird online über Microsoft erzeugt. Das Fenster zu schließen lässt den "
                         "Vorleser im Infobereich weiterlaufen.")
@@ -182,6 +190,9 @@ class SettingsWindow(QWidget):
                 slider.setValue(round(value * 100))
             self._format(key, label, value)
         self._building = False
+
+    def set_hotkey(self, key, combo):
+        self.hotkeys[key].set_combo(combo)
 
     def set_status(self, text):
         self.status.setText(text)

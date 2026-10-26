@@ -1,5 +1,6 @@
 """Tray app wiring: hotkeys, playback, mini-player and settings. Qt runs on the main thread only."""
 import logging
+import re
 import threading
 
 import keyboard
@@ -13,14 +14,33 @@ from playback import PlaybackController
 from settings import DEFAULTS, VOICES, load_config, save_config, set_autostart, is_autostart_enabled
 from settings_window import SettingsWindow
 from ui_theme import Theme, tray_icon
+from ui_widgets import key_label
 
 SPEED_STEPS = (1.0, 1.25, 1.5, 1.75, 2.0)
 WORDS_PER_SECOND = 2.5  # measured 2.5 words/s at 1.0x with the German voices (2026-10-26)
+HOTKEYS = {"hotkey": "capture", "pause_hotkey": "pause", "stop_hotkey": "stop",
+           "prev_hotkey": "previous", "next_hotkey": "next"}
+HOTKEY_NAMES = {"hotkey": "Vorlesen", "pause_hotkey": "Pause / Weiter", "stop_hotkey": "Beenden",
+                "prev_hotkey": "Satz zurück", "next_hotkey": "Satz vor"}
 
 
 def hotkey_label(combo):
-    names = {"ctrl": "Strg", "alt": "Alt", "space": "Leertaste", "esc": "Esc", "shift": "Umschalt"}
-    return " + ".join(names.get(p.strip().lower(), p.strip().upper()) for p in combo.split("+"))
+    return " + ".join(key_label(p) for p in combo.split("+"))
+
+
+def hotkey_problem(combo, others):
+    """Why ``combo`` cannot be a global hotkey, or None."""
+    parts = combo.split("+")
+    if len(parts) == 1 and not re.fullmatch(r"esc|f\d{1,2}", combo):
+        return "Einzelne Tasten würden beim Tippen auslösen. Bitte mit Strg, Alt, Umschalt oder Win kombinieren."
+    for key, other in others.items():
+        if other == combo:
+            return f"{hotkey_label(combo)} ist schon für „{HOTKEY_NAMES[key]}“ vergeben."
+    try:
+        keyboard.parse_hotkey(combo)
+    except ValueError:
+        return f"{hotkey_label(combo)} kann nicht als Tastenkürzel verwendet werden."
+    return None
 
 
 class Bridge(QObject):
@@ -35,6 +55,8 @@ class ReaderApp:
         self.instance = instance
         self.config = load_config()
         self.closing = False
+        self.last = None          # last reading: units, unit to resume at, finished
+        self._previewing = False
         self.capture_cancel = threading.Event()
         self.state = "idle"  # idle | capturing | preparing | reading | buffering | message
         self.bridge = Bridge()
@@ -75,6 +97,8 @@ class ReaderApp:
         w.toggle_changed.connect(self._toggle)
         w.preview_voice.connect(self._preview_voice)
         w.read_text.connect(self.read_text)
+        w.hotkey_changed.connect(self.set_hotkey)
+        w.hotkey_recording.connect(self._hotkey_recording)
 
     def _setup_tray(self):
         self.tray = QSystemTrayIcon(tray_icon())
@@ -85,6 +109,15 @@ class ReaderApp:
             action = QAction(label, menu)
             action.triggered.connect(slot)
             menu.addAction(action)
+        menu.addSeparator()
+        self.resume_action = QAction("Weiterlesen", menu)
+        self.resume_action.triggered.connect(self.resume)
+        self.again_action = QAction("Zuletzt Vorgelesenes wiederholen", menu)
+        self.again_action.triggered.connect(lambda: self.resume(from_start=True))
+        menu.addAction(self.resume_action)
+        menu.addAction(self.again_action)
+        menu.aboutToShow.connect(self._update_recent)
+        self._update_recent()
         menu.addSeparator()
         quit_action = QAction("Beenden", menu)
         quit_action.triggered.connect(self.quit)
@@ -97,14 +130,40 @@ class ReaderApp:
 
     def _register_hotkeys(self):
         self.hotkeys = []
-        for key, action in (("hotkey", "capture"), ("pause_hotkey", "pause"), ("stop_hotkey", "stop")):
+        for key, action in HOTKEYS.items():
             emit = lambda a=action: self.bridge.action.emit(a)
             try:
                 self.hotkeys.append(keyboard.add_hotkey(self.config[key], emit))
             except (ValueError, KeyError):
                 self.config[key] = DEFAULTS[key]
+                self.window.set_hotkey(key, self.config[key])
                 self.hotkeys.append(keyboard.add_hotkey(self.config[key], emit))
                 self._set_status("Ungültiges Tastenkürzel wurde auf den Standard zurückgesetzt.")
+
+    def _unregister_hotkeys(self):
+        for hook in self.hotkeys:
+            try:
+                keyboard.remove_hotkey(hook)
+            except (KeyError, ValueError):
+                pass
+        self.hotkeys = []
+
+    def _hotkey_recording(self, active):
+        # While a new combination is typed, the current ones must not fire.
+        self._unregister_hotkeys() if active else (self.hotkeys or self._register_hotkeys())
+
+    def set_hotkey(self, key, combo):
+        error = hotkey_problem(combo, {k: self.config[k] for k in HOTKEYS if k != key})
+        if error:
+            self.window.set_hotkey(key, self.config[key])
+            self._set_status(error)
+        else:
+            self.config[key] = combo
+            self.window.set_hotkey(key, combo)
+            self._set_status(f"Tastenkürzel gespeichert: {hotkey_label(combo)}")
+            self.save_timer.start()
+        self._unregister_hotkeys()
+        self._register_hotkeys()
 
     def _sync_autostart(self):
         try:
@@ -118,7 +177,8 @@ class ReaderApp:
             self._set_status("Autostart prüfen: Windows-Launcher nicht verfügbar.")
 
     def _on_action(self, action):
-        {"capture": self.capture, "pause": self.toggle_pause, "stop": self.stop}[action]()
+        {"capture": self.capture, "pause": self.toggle_pause, "stop": self.stop,
+         "previous": lambda: self.jump(-1), "next": lambda: self.jump(1)}[action]()
 
     def _check_instance(self):
         if self.instance.show_requested():
@@ -217,6 +277,8 @@ class ReaderApp:
         if units is None and not text.strip():
             self._set_status("Kein Text vorhanden. Text markieren oder eingeben.")
             return
+        self._remember()
+        self._previewing = False
         self.playback.start(text, self.config, units=units, first=first)
         self.hud.set_paused(False)
         self._enter("preparing", "Wird vorbereitet …")
@@ -231,9 +293,36 @@ class ReaderApp:
         self.hud.set_paused(False)
         self._enter("preparing", self.hud._text)  # keep showing the sentence until audio starts
 
+    # -- last reading (kept in memory only; the text is never written to disk) ------
+    def _remember(self, finished=False):
+        job = self.playback.current
+        if not job or not job.units or self._previewing:
+            return
+        position = self.playback.position()
+        self.last = dict(units=job.units, unit=position[0] if position else job.first, finished=finished)
+
+    def _update_recent(self):
+        last = getattr(self, "last", None)
+        can_resume = bool(last) and not last["finished"]
+        self.resume_action.setEnabled(can_resume)
+        self.again_action.setEnabled(bool(last))
+        if can_resume:
+            words = last["units"][last["unit"]].split()
+            snippet = " ".join(words[:5]) + (" …" if len(words) > 5 else "")
+            self.resume_action.setText(f"Weiterlesen: „{snippet}“")
+        else:
+            self.resume_action.setText("Weiterlesen")
+
+    def resume(self, from_start=False):
+        last = getattr(self, "last", None)
+        if last:
+            first = 0 if from_start or last["finished"] else last["unit"]
+            self.read_text(None, units=last["units"], first=first)
+
     def _preview_voice(self):
         name = VOICES[self.config["voice"]].split(" (")[0]
         self.read_text(f"Hallo, ich bin {name}. So klinge ich, wenn ich dir einen Text vorlese.")
+        self._previewing = True  # a voice sample is not "the last reading"
 
     def toggle_pause(self):
         job = self.playback.current
@@ -245,6 +334,7 @@ class ReaderApp:
 
     def stop(self):
         self.capture_cancel.set()
+        self._remember()
         self.playback.stop()
         self.ticker.stop()
         self.message_timer.stop()
@@ -260,6 +350,7 @@ class ReaderApp:
         elif event == "buffering":
             self.state = "buffering"
         elif event in ("done", "error"):
+            self._remember(finished=event == "done")
             self.ticker.stop()
             self.hud.hide_player()
             self.state = "idle"
@@ -341,8 +432,7 @@ class ReaderApp:
         if self.save_timer.isActive():
             self.save_timer.stop()
         self._save()
-        for hook in self.hotkeys:
-            keyboard.remove_hotkey(hook)
+        self._unregister_hotkeys()
         self.tray.hide()
         self.playback.close()
         QGuiApplication.instance().quit()

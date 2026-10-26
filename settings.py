@@ -9,6 +9,7 @@ import winreg
 ROOT = Path(__file__).resolve().parent
 CONFIG_FILE = ROOT / "config.json"
 DEFAULTS = dict(hotkey="ctrl+alt+v", pause_hotkey="ctrl+alt+space", stop_hotkey="esc",
+                prev_hotkey="ctrl+alt+left", next_hotkey="ctrl+alt+right",
                 voice="de-DE-KillianNeural", speed=1.05, volume=0.7, pitch="+0Hz",
                 restore_clipboard=True, autostart=False, hud_enabled=True,
                 theme="system", sound_profile="studio_warmth")

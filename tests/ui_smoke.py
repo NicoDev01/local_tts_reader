@@ -9,7 +9,9 @@ import json
 import time
 from unittest.mock import patch
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QEvent, Qt
+from PySide6.QtGui import QKeyEvent
+from PySide6.QtWidgets import QApplication, QLabel
 
 qt = QApplication(sys.argv)
 qt.setQuitOnLastWindowClosed(False)
@@ -83,6 +85,43 @@ with patch.object(reader_ui.keyboard, 'add_hotkey', return_value=None), \
             assert not app.hud.isVisible() and app.state == 'idle'
             app.playback.current = None
             results[mode] = True
+        # Hotkeys: bare letters and duplicates are refused, valid ones take effect.
+        app.set_hotkey('next_hotkey', 'n')
+        assert app.config['next_hotkey'] == 'ctrl+alt+right' and 'Einzelne Tasten' in app.window.status.text()
+        app.set_hotkey('next_hotkey', 'ctrl+alt+v')
+        assert app.config['next_hotkey'] == 'ctrl+alt+right' and 'vergeben' in app.window.status.text()
+        app.set_hotkey('next_hotkey', 'ctrl+shift+f9')
+        assert app.config["next_hotkey"] == "ctrl+shift+f9"
+        pump(.1)
+        assert [c.text() for c in app.window.hotkeys['next_hotkey'].findChildren(QLabel)
+                if c.objectName() == 'KeyCap'] == ['Strg', 'Umschalt', 'F9']
+        # Recording: click the field, press Ctrl+Alt+K (virtual key 0x4B).
+        field, got = app.window.hotkeys['prev_hotkey'], []
+        field.recorded.connect(got.append)
+        field.mousePressEvent(None)
+        assert field.active
+        field.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_K,
+                                      Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier,
+                                      0, 0x4B, 0))
+        assert got == ['ctrl+alt+k'] and not field.active and app.config['prev_hotkey'] == 'ctrl+alt+k'
+        app.show_window()
+        pump()
+        app.window.grab().save(str(output / 'settings-hotkeys.png'))
+        app.window.hide()
+
+        # Last reading: resume where it stopped, or again from the start.
+        units = ['Eins.', 'Zwei.', 'Drei.']
+        with patch.object(app.playback, 'start') as start:
+            app.last = dict(units=units, unit=1, finished=False)
+            app._update_recent()
+            assert app.resume_action.isEnabled() and 'Zwei.' in app.resume_action.text()
+            app.resume()
+            assert start.call_args.kwargs['first'] == 1
+            app.resume(from_start=True)
+            assert start.call_args.kwargs['first'] == 0
+        app.playback.current = None
+        app.stop()
+
         app._message('Kein Text markiert')
         pump(.3)
         assert app.hud.isVisible() and 'Kein Text' in app.hud.sentence.text()
