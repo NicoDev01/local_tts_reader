@@ -11,7 +11,13 @@ import numpy as np
 
 from audio_player import AudioPlayer, OUTPUT_SAMPLE_RATE
 from high_fidelity_tts import HighFidelityTTSClient
+from settings import VOICE_GAIN_DB
 from text_cleaner import group_ranges, split_units
+
+
+def voice_gain(voice):
+    """Linear gain that levels this voice with the others."""
+    return 10 ** (VOICE_GAIN_DB.get(voice, 0.0) / 20)
 
 
 @dataclass
@@ -186,7 +192,7 @@ class PlaybackController:
 
         future = asyncio.run_coroutine_threadsafe(asyncio.wait_for(pump(), 35), self.loop)
         job.future = future
-        preparer = self.player.stream_section(config["speed"])
+        preparer = self.player.stream_section(config["speed"], voice_gain(config["voice"]))
         pending, sr, queued = [], None, 0.0
         # Start as early as possible, then hand over larger pieces. The last
         # 0.4 s stay pending so the section's trailing silence is trimmed whole.
@@ -298,7 +304,7 @@ class PlaybackController:
                     raise RuntimeError("Sprachdienst liefert kein Audio")
                 seconds = len(audio) / sr * config["speed"] / 2
                 if hasattr(self.player, 'prepare'):
-                    audio = self.player.prepare(audio, sr, config["speed"])
+                    audio = self.player.prepare(audio, sr, config["speed"], voice_gain(config["voice"]))
                 elapsed = time.monotonic() - request_started
                 self._request_seconds = .7 * self._request_seconds + .3 * elapsed
                 target = min(12.0, max(2.5, self._request_seconds * 1.6 + .5))

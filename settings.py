@@ -13,12 +13,18 @@ DEFAULTS = dict(hotkey="ctrl+alt+v", pause_hotkey="ctrl+alt+space", stop_hotkey=
                 voice="de-DE-KillianNeural", speed=1.05, volume=0.7, pitch="+0Hz",
                 restore_clipboard=True, autostart=False, hud_enabled=True,
                 theme="system", sound_profile="studio_warmth")
-# Voices offered by the Edge read-aloud service (checked 2026-10-26).
+# Voices offered by the Edge read-aloud service (checked 2026-10-26). Seraphina is listed by
+# the service but failed about every second request, so it is left out.
 VOICES = {"de-DE-KillianNeural": "Killian", "de-DE-ConradNeural": "Conrad",
           "de-DE-FlorianMultilingualNeural": "Florian", "de-DE-KatjaNeural": "Katja",
-          "de-DE-SeraphinaMultilingualNeural": "Seraphina", "de-DE-AmalaNeural": "Amala",
+          "de-DE-AmalaNeural": "Amala",
           "de-AT-JonasNeural": "Jonas (Österreich)", "de-AT-IngridNeural": "Ingrid (Österreich)",
           "de-CH-JanNeural": "Jan (Schweiz)", "de-CH-LeniNeural": "Leni (Schweiz)"}
+# Level match to Killian in dB: speech-active level of three texts per voice, measured
+# 2026-10-26. Within one voice the texts differed by at most 1.4 dB, so a fixed gain suffices.
+VOICE_GAIN_DB = {"de-DE-KillianNeural": 0.0, "de-DE-ConradNeural": -1.4, "de-DE-FlorianMultilingualNeural": -1.0,
+                 "de-DE-KatjaNeural": -1.1, "de-DE-AmalaNeural": -0.2, "de-AT-JonasNeural": -0.8,
+                 "de-AT-IngridNeural": -3.1, "de-CH-JanNeural": -1.0, "de-CH-LeniNeural": -2.9}
 PROFILES = dict(studio_warmth="Warm", headphone_comfort="Sanft", crystal_clear="Klar",
                 night_whisper="Leise hören", bypass="Unbearbeitet")
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"

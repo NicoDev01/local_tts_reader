@@ -33,6 +33,7 @@ class GermanTextTests(unittest.TestCase):
 class VoiceTests(unittest.TestCase):
     def test_retired_voice_falls_back_to_default(self):
         self.assertNotIn('de-DE-RalfNeural', VOICES)
+        self.assertNotIn('de-DE-SeraphinaMultilingualNeural', VOICES)  # unreliable at the service
         self.assertEqual(validate({'voice': 'de-DE-RalfNeural'})['voice'], 'de-DE-KillianNeural')
         self.assertEqual(validate({'voice': 'de-AT-JonasNeural'})['voice'], 'de-AT-JonasNeural')
 

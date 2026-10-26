@@ -106,8 +106,8 @@ class SectionStream:
     """
     FADE = int(OUTPUT_SAMPLE_RATE * .008)
 
-    def __init__(self, player, speed):
-        self.player, self.speed = player, speed
+    def __init__(self, player, speed, gain=1.0):
+        self.player, self.speed, self.gain = player, speed, gain
         self.resampler = None
         self.voiced = False      # leading silence already trimmed
         self.filtered = False    # filter state initialized
@@ -115,7 +115,7 @@ class SectionStream:
         self.position = 0.0      # request-audio seconds covered by returned pieces
 
     def push(self, audio, sr, final):
-        audio = np.asarray(audio, dtype=np.float32)
+        audio = np.asarray(audio, dtype=np.float32) * self.gain
         if audio.ndim == 2:
             audio = audio.mean(axis=1)
         if not math.isfinite(sr) or sr <= 0 or not np.all(np.isfinite(audio)):
@@ -190,8 +190,8 @@ class AudioPlayer:
         with self._lock:
             return self.speed, self.volume
 
-    def _prepare(self, audio, sr):
-        audio = np.asarray(audio, dtype=np.float32)
+    def _prepare(self, audio, sr, gain=1.0):
+        audio = np.asarray(audio, dtype=np.float32) * gain
         if (audio.ndim not in (1, 2) or not audio.size or not math.isfinite(sr)
                 or sr <= 0 or not np.all(np.isfinite(audio))):
             raise ValueError("Ungültige Audiodaten")
@@ -228,19 +228,19 @@ class AudioPlayer:
     def close(self):
         self._tempo_worker.shutdown(wait=True, cancel_futures=True)
 
-    def prepare(self, audio, sr, speed):
+    def prepare(self, audio, sr, speed, gain=1.0):
         if not math.isfinite(speed) or speed <= 0:
             raise ValueError("Ungültiges Quelltempo")
-        prepared = PreparedAudio(self._prepare(audio, sr), speed)
+        prepared = PreparedAudio(self._prepare(audio, sr, gain), speed)
         prepared.rate = self.controls()[0] / speed
         if abs(prepared.rate - 1.0) > 1e-6:
             prepared.rendered = self._stretch(prepared.source, prepared.rate)
         return prepared
 
-    def stream_section(self, speed):
+    def stream_section(self, speed, gain=1.0):
         if not math.isfinite(speed) or speed <= 0:
             raise ValueError("Ungültiges Quelltempo")
-        return SectionStream(self, speed)
+        return SectionStream(self, speed, gain)
 
     @contextmanager
     def session(self, cancel):

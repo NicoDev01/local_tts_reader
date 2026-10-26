@@ -55,6 +55,23 @@ class SectionStreamTests(unittest.TestCase):
             player.close()
 
 
+class VoiceLevelTests(unittest.TestCase):
+    def test_every_voice_has_a_level_and_gain_is_applied(self):
+        from playback import voice_gain
+        from settings import VOICE_GAIN_DB, VOICES
+        self.assertEqual(set(VOICE_GAIN_DB), set(VOICES))
+        self.assertAlmostEqual(voice_gain('de-AT-IngridNeural'), 10 ** (-3.1 / 20))
+        player = AudioPlayer()
+        player.set_profile('bypass')
+        try:
+            audio = speech_like()
+            loud = player.stream_section(1).push(audio, 24000, True).source
+            quiet = player.stream_section(1, .5).push(audio, 24000, True).source
+            self.assertAlmostEqual(np.max(np.abs(quiet)) / np.max(np.abs(loud)), .5, places=2)
+        finally:
+            player.close()
+
+
 class StreamingClient:
     def __init__(self, fail_before=0, fail_after=False):
         self.release, self.calls = threading.Event(), 0
