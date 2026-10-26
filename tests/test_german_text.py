@@ -40,3 +40,16 @@ class VoiceTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SpeakableTests(unittest.TestCase):
+    def test_english_hyphen_compounds_get_a_space_for_the_voice(self):
+        from text_cleaner import speakable
+        self.assertEqual(speakable('Das Tray-Symbol öffnet das Tray-Menü.'), 'Das Tray Symbol öffnet das Tray Menü.')
+        self.assertEqual(speakable('Der Download-Link im Browser-Tab.'), 'Der Download Link im Browser Tab.')
+        self.assertEqual(speakable('Die E-Mail und das Open-Source-Projekt.'), 'Die E-Mail und das Open-Source-Projekt.')
+        self.assertEqual(speakable('Baden-Württemberg'), 'Baden-Württemberg')
+
+    def test_tab_is_only_tabelle_before_a_number(self):
+        self.assertTrue(clean_text('Siehe Tab. 3.').startswith('Siehe Tabelle 3'))
+        self.assertTrue(clean_text('Im Browser-Tab.').endswith('Browser-Tab.'))

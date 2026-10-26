@@ -46,6 +46,10 @@ CASES = [
     "Schritte:\n1. Öffnen\n2. Speichern\n3. Schließen",
     "Die Datei liegt unter C:\\Users\\Max\\bericht.pdf.",
     "Ca. 2.500 Mitarbeiter, u. a. in Berlin, arbeiten dort.",
+    "Ein Klick auf das Tray-Symbol öffnet das Tray-Menü.",
+    "Das Plug-in liest die Clipboard-Daten aus.",
+    "Das Pop-up erscheint nach dem Login im Browser-Tab.",
+    "Schick mir die E-Mail mit dem Download-Link.",
 ]
 
 
@@ -54,13 +58,13 @@ def synthesize():
     import soundfile as sf
     sys.path.insert(0, str(HERE.parent))
     from high_fidelity_tts import HighFidelityTTSClient
-    from text_cleaner import clean_text
+    from text_cleaner import clean_text, speakable
 
     async def run():
         client, rows = HighFidelityTTSClient(), []
         OUT.mkdir(parents=True, exist_ok=True)
         for i, text in enumerate(CASES):
-            row = dict(case=i, text=text, cleaned=clean_text(text))
+            row = dict(case=i, text=text, cleaned=speakable(clean_text(text)))
             for kind, value in (("raw", text), ("cleaned", row["cleaned"])):
                 audio, sr = await client.synthesize(value, rate="+0%")
                 path = OUT / f"{i:02d}-{kind}.wav"

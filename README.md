@@ -28,13 +28,15 @@ Violett, kommende Wörter gedämpft. Dazu Fortschritt und ungefähre Restzeit.
 - **Verschieben:** Mini-Player oder eingeklappte Pille mit der Maus ziehen; die Position bleibt gespeichert. Doppelklick setzt ihn in die Ecke zurück.
 - **Pause** blendet über 80 ms aus und beim Fortsetzen wieder ein, statt mitten im Wort abzuschneiden.
 - **Buch-Symbol:** öffnet die Leseansicht.
+- **Spulen:** Über dem Fortschrittsbalken erscheint ein Knopf. Ziehen zeigt Zielsatz, Zeit und Satznummer als Vorschau; beim Loslassen geht es am Anfang dieses Satzes weiter (etwa 1 s). Ein Satzanfang klingt natürlicher als ein Einstieg mitten im Satz.
 
 - **Satz zurück / vor:** Wie bei einem Musikplayer springt „zurück“ zuerst an den Anfang des aktuellen Satzes (nach mehr als 2 s) und erst sonst einen Satz weiter zurück. Ein Sprung braucht etwa 0,6 s.
 - **Tempo-Chip:** Klick wechselt 1× → 1,25× → 1,5× → 1,75× → 2×; das Mausrad ändert in 0,05er-Schritten. Bereich **0,70× bis 2,00×**, ohne beabsichtigte Änderung der Tonhöhe.
 - **Lautsprecher:** Klick schaltet stumm; das Mausrad ändert die Lautstärke (**0 bis 150 %**, unabhängig von Windows).
 - **Minus** klappt ihn zu einer Pille mit Pause-Taste und Satzzähler ein; ein Klick auf die Pille klappt ihn auf. **×** beendet das Vorlesen.
 - Die Satzanzeige nutzt die Satzzeitpunkte, die der Sprachdienst mitliefert; die Restzeit ist eine Schätzung (2,5 Wörter/s bei 1×).
-- Tempo und Lautstärke wirken auch auf bereits geladenes Audio. Live-Tempowechsel werden im Hintergrund berechnet und bevorzugt in einer Sprechpause überblendet (höchstens 350 ms Wartezeit).
+- **Tempo ändern während des Vorlesens:** Der Sprachdienst spricht im angeforderten Tempo; nachträgliches Strecken klang verzerrt. Deshalb wird der Rest im neuen Tempo neu erzeugt: kurz nach Satzbeginn sofort, sonst ab dem nächsten Satz (nach dem letzten Wort des laufenden Satzes). Bis dahin wird nur der laufende Satz angepasst.
+- Lautstärke wirkt sofort, auch auf bereits geladenes Audio.
 
 ## Leseansicht
 
@@ -49,6 +51,13 @@ Der kostenlose Microsoft-Dienst nimmt keine SSML-Auszeichnungen an (`<lang>`, `<
 allein von der Stimme ab. Eine Kontrolle mit Whisper ergab: Gängiges Denglisch wie „Pull Request“,
 „Deployment“ oder „ready for review“ wurde bei allen geprüften Stimmen richtig verstanden.
 Die Hörproben `tests/artifacts/voices/<Stimme> Denglisch.wav` zeigen den Akzent im Vergleich.
+
+Schwierig sind englische Wörter mit Bindestrich: „Tray-Symbol“ klang wie „Dreh-Symbol“. Mit
+Leerzeichen („Tray Symbol“) liest die Stimme den englischen Teil englisch. Deshalb ersetzt
+`speakable()` in `text_cleaner.py` den Bindestrich neben bekannten englischen Wörtern durch ein
+Leerzeichen, nur im Text für die Stimme; die Anzeige bleibt unverändert. Whisper-Kontrolle vom
+27.10.2026: vorher 4 von 12 Testsätzen falsch verstanden, danach keiner. Fehlt ein Wort, lässt es
+sich in `ENGLISH_PARTS` ergänzen.
 
 ## Einstellungen
 

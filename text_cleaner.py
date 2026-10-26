@@ -75,7 +75,7 @@ ABBREVIATION_EXPANSIONS = [
     (r'\bdgl\.(?=\s|$)', 'dergleichen'),
     (r'\bo\.ä\.(?=\s|$)', 'oder ähnliches'),
     (r'\babb\.(?=\s|$)', 'Abbildung'),
-    (r'\btab\.(?=\s|$)', 'Tabelle'),
+    (r'\btab\.(?=\s*\d)', 'Tabelle'),  # only "Tab. 3"; "Browser-Tab." is the English word
     (r'\bkap\.(?=\s|$)', 'Kapitel'),
     (r'\bbd\.(?=\s|$)', 'Band'),
     (r'\bbde\.(?=\s|$)', 'Bände'),
@@ -666,6 +666,26 @@ def clean_text(text: str) -> str:
     text = re.sub(r'[ \t]+', ' ', text)
 
     return text.strip()
+
+
+# English words the German voices read the German way when glued to a hyphen
+# ("Tray-Symbol" sounded like "Dreh-Symbol"); with a space they are read in English.
+# Checked with Whisper on 2026-10-27. Only the text sent to the voice changes.
+ENGLISH_PARTS = (
+    "account", "app", "backup", "blog", "board", "browser", "button", "cache", "chat", "clip", "clipboard",
+    "cloud", "code", "community", "content", "cookie", "dashboard", "desktop", "download", "feature",
+    "feedback", "file", "game", "hotkey", "home", "laptop", "link", "live", "login", "meeting",
+    "mobile", "online", "player", "plug", "post", "queue", "screen", "server", "setup", "shop", "shortcut",
+    "smart", "social", "software", "stream", "team", "tool", "tools", "touch", "tray", "update", "upload",
+    "user", "web", "widget", "workflow", "workspace",
+)
+_ENGLISH = "|".join(ENGLISH_PARTS)
+_ENGLISH_HYPHEN = re.compile(rf"(?i)\b({_ENGLISH})-(?=\w)|(?<=\w)-({_ENGLISH})\b")
+
+
+def speakable(text: str) -> str:
+    """Text as sent to the voice: hyphens next to English words become spaces."""
+    return _ENGLISH_HYPHEN.sub(lambda m: f"{m.group(1)} " if m.group(1) else f" {m.group(2)}", text)
 
 
 def split_sentences(text: str, max_chunk_words: int = 80) -> List[str]:

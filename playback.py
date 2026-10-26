@@ -12,7 +12,7 @@ import numpy as np
 from audio_player import AudioPlayer, OUTPUT_SAMPLE_RATE
 from high_fidelity_tts import HighFidelityTTSClient
 from settings import VOICE_GAIN_DB
-from text_cleaner import group_ranges, split_units
+from text_cleaner import group_ranges, speakable, split_units
 
 
 def voice_gain(voice):
@@ -232,7 +232,7 @@ class PlaybackController:
 
     async def _synthesize(self, text, config):
         return await asyncio.wait_for(self.client.synthesize(
-            text.strip(), **self._voice_args(config)), timeout=35)
+            speakable(text.strip()), **self._voice_args(config)), timeout=35)
 
     def _stream_part(self, job, part, index, total, config):
         """Queue a section in pieces while the service is still speaking.
@@ -248,7 +248,7 @@ class PlaybackController:
         async def pump():
             try:
                 async for samples, sr in self.client.synthesize_stream(
-                        part.strip(), on_boundary=on_boundary, **self._voice_args(config)):
+                        speakable(part.strip()), on_boundary=on_boundary, **self._voice_args(config)):
                     pieces.put(("audio", samples, sr))
                 pieces.put(("end", None, None))
             except BaseException as error:
