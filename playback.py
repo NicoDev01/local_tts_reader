@@ -36,6 +36,8 @@ class Reading:
     sections: list = field(default_factory=list)    # (first, end) unit ranges sent as one request
     first: int = 0                                  # unit this reading starts at
     boundaries: dict = field(default_factory=dict)  # section -> [(seconds, unit)]
+    words: dict = field(default_factory=dict)       # section -> [(seconds, char, length)]
+    unit_chars: dict = field(default_factory=dict)  # section -> char start of each unit
 
     def reserve(self, seconds):
         with self.buffer_lock:
@@ -58,9 +60,19 @@ class Reading:
             offsets.append(len(text))
             text += flat(unit) + ' '
         found = self.boundaries[section] = []  # a retried request starts over
+        words = self.words[section] = []
+        self.unit_chars[section] = offsets
+        word_position = 0
 
-        def handle(seconds, spoken):
-            nonlocal position
+        def handle(seconds, spoken, kind="sentence"):
+            nonlocal position, word_position
+            if kind == "word":
+                probe = flat(spoken)
+                at = text.find(probe, word_position) if probe else -1
+                if at >= 0:
+                    word_position = at + len(probe)
+                    words.append((seconds, at, len(probe)))
+                return
             probe = flat(spoken)[:24]
             at = text.find(probe, position) if probe else -1
             if at >= 0:
@@ -139,6 +151,21 @@ class PlaybackController:
             if offset <= seconds + .05 and mapped != unit:
                 unit, unit_start = mapped, offset
         return unit, max(0.0, seconds - unit_start)
+
+    def current_word(self):
+        """(unit, char offset in the unit's text, length) of the word being spoken, or None."""
+        job = self.current
+        cursor = getattr(self.player, 'cursor', None)
+        if not job or not cursor or cursor[0] is None or cursor[0][0] is not job:
+            return None
+        _, section = cursor[0]
+        spoken = [w for w in list(job.words.get(section, ())) if w[0] <= cursor[1] + .02]
+        if not spoken:
+            return None
+        _, at, length = spoken[-1]
+        offsets = job.unit_chars[section]
+        index = max(i for i, o in enumerate(offsets) if o <= at)
+        return job.sections[section][0] + index, at - offsets[index], length
 
     def jump(self, delta, config):
         """Restart at the next (+1) or previous (-1) sentence.

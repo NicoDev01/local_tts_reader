@@ -2,7 +2,9 @@
 
 It never takes focus, so clicking it leaves the document's selection alone.
 """
+import html
 import math
+import re
 
 from PySide6.QtCore import (QEasingCurve, QParallelAnimationGroup, QPoint, QPropertyAnimation, QRectF,
                             Qt, QTimer, Signal)
@@ -38,6 +40,51 @@ def elide_lines(text, metrics, width, lines=2):
         if not rows[-1].endswith("…"):
             rows[-1] = rows[-1].rstrip(" .,;:") + " …"
     return "\n".join(rows)
+
+
+def highlight_lines(text, word_at, metrics, width, colors, lines=2):
+    """Two-line window that follows the spoken word: said words full, the current one
+    marked, upcoming ones dimmed. Starts at the sentence beginning while it fits."""
+    tokens = [(m.start(), m.end()) for m in re.finditer(r"\S+", text)]
+    if not tokens:
+        return ""
+    current = next((i for i, (_, end) in enumerate(tokens) if end > word_at), len(tokens) - 1)
+
+    def fill(first):
+        rows, line = [[]], "… " if first else ""
+        for i in range(first, len(tokens)):
+            word = text[tokens[i][0]:tokens[i][1]]
+            candidate = f"{line} {word}" if line.strip() else line + word
+            if metrics.horizontalAdvance(candidate) <= width or not rows[-1]:
+                rows[-1].append(i)
+                line = candidate
+            elif len(rows) == lines:
+                break
+            else:
+                rows.append([i])
+                line = word
+        return rows
+
+    # Keep as much already-read context as fits while the current word and a few
+    # upcoming words stay visible, so the eye can read ahead.
+    ahead = min(3, len(tokens) - 1 - current)
+    for first in range(current + 1):
+        rows = fill(first)
+        if current + ahead in [i for row in rows for i in row]:
+            break
+
+    def span(i):
+        word = html.escape(text[tokens[i][0]:tokens[i][1]])
+        if i == current:
+            return f'<span style="color:{colors["accent"]};">{word}</span>'
+        return f'<span style="color:{colors["text" if i < current else "secondary"]};">{word}</span>'
+
+    out = [" ".join(span(i) for i in row) for row in rows]
+    if first:
+        out[0] = f'<span style="color:{colors["secondary"]};">…</span> ' + out[0]
+    if rows[-1] and rows[-1][-1] < len(tokens) - 1:
+        out[-1] += f' <span style="color:{colors["secondary"]};">…</span>'
+    return "<br>".join(out)
 
 
 class Chip(QAbstractButton):
@@ -89,7 +136,7 @@ class ProgressLine(QWidget):
         p.setBrush(Theme.color("track"))
         p.drawRoundedRect(QRectF(self.rect()), 1.5, 1.5)
         if self.value > 0:
-            p.setBrush(Theme.color("primary"))
+            p.setBrush(Theme.color("accent"))
             p.drawRoundedRect(QRectF(0, 0, max(3.0, self.width() * self.value), 3), 1.5, 1.5)
 
 
@@ -297,15 +344,22 @@ class MiniPlayer(QWidget):
         for w in self.findChildren(QWidget):
             w.update()
 
-    def set_text(self, text, status=False):
-        self._text, self._is_status = text, status
+    def set_text(self, text, status=False, word=None):
+        """``word`` = (char offset, length) of the word being spoken, to highlight it."""
+        self._text, self._is_status, self._word = text, status, word
         self._render_text()
 
     def _render_text(self):
         color = Theme.colors["secondary" if self._is_status else "text"]
         self.sentence.setStyleSheet(f"color: {color};")
         width = EXPANDED[0] - 16 - 10 - 2 * 24
-        self.sentence.setText(elide_lines(self._text, QFontMetrics(self.sentence.font()), width))
+        metrics = QFontMetrics(self.sentence.font())
+        if self._is_status or not getattr(self, "_word", None):
+            self.sentence.setTextFormat(Qt.TextFormat.PlainText)
+            self.sentence.setText(elide_lines(self._text, metrics, width))
+            return
+        self.sentence.setTextFormat(Qt.TextFormat.RichText)
+        self.sentence.setText(highlight_lines(self._text, self._word[0], metrics, width, Theme.colors))
 
     def set_paused(self, paused):
         self.paused = paused

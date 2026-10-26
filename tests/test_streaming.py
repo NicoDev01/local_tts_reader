@@ -181,3 +181,40 @@ class SentencePositionTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class WordHighlightTests(unittest.TestCase):
+    def test_words_map_to_unit_and_offset(self):
+        controller = PlaybackController(lambda *a: None, DEFAULTS, StreamingClient(), RecordingPlayer())
+        try:
+            units = ['Hinweis: Die Bibliothek öffnet.', 'Wer kommt mit?']
+            job = controller.start(None, DEFAULTS, units=units)
+            controller.stop()
+            controller.current = job
+            handle = job.boundary_handler(0)
+            for seconds, word in ((.1, 'Hinweis'), (1.3, 'Die'), (1.5, 'Bibliothek'), (3.6, 'Wer'), (3.9, 'kommt')):
+                handle(seconds, word, 'word')
+            controller.player.cursor = ((job, 0), 1.6)
+            self.assertEqual(controller.current_word(), (0, units[0].index('Bibliothek'), len('Bibliothek')))
+            controller.player.cursor = ((job, 0), 3.95)
+            self.assertEqual(controller.current_word(), (1, units[1].index('kommt'), len('kommt')))
+        finally:
+            controller.close()
+            controller.player.close()
+
+    def test_window_follows_the_spoken_word(self):
+        import sys
+        from PySide6.QtWidgets import QApplication
+        from PySide6.QtGui import QFontMetrics
+        from mini_player import highlight_lines
+        from ui_theme import LIGHT, ui_font
+        QApplication.instance() or QApplication(sys.argv)
+        metrics = QFontMetrics(ui_font(10))
+        text = ' '.join(f'Wort{i}' for i in range(40))
+        start = highlight_lines(text, 0, metrics, 260, LIGHT)
+        self.assertIn(f'color:{LIGHT["accent"]};">Wort0<', start)
+        self.assertTrue(start.endswith('…</span>'))
+        late = highlight_lines(text, text.index('Wort35'), metrics, 260, LIGHT)
+        self.assertIn(f'color:{LIGHT["accent"]};">Wort35<', late)
+        self.assertIn('Wort34', late)  # context before the current word stays visible
+        self.assertNotIn('>Wort0<', late)

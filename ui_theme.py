@@ -11,12 +11,12 @@ from PySide6.QtSvg import QSvgRenderer
 LIGHT = dict(
     window="#F5F5F7", card="#FFFFFF", border="#E3E3E8", text="#1D1D1F", secondary="#6E6E73",
     muted="#AEAEB2", primary="#1D1D1F", on_primary="#FFFFFF", control="#E9E9EE",
-    hover="#00000010", track="#D9D9DE", danger="#D70015", shadow=(0, 0, 0),
+    hover="#00000010", track="#D9D9DE", danger="#D70015", shadow=(0, 0, 0), accent="#7C4DFF",
 )
 DARK = dict(
     window="#1C1C1E", card="#2C2C2E", border="#3A3A3C", text="#F5F5F7", secondary="#98989D",
     muted="#636366", primary="#F5F5F7", on_primary="#1C1C1E", control="#3A3A3C",
-    hover="#FFFFFF14", track="#48484A", danger="#FF453A", shadow=(0, 0, 0),
+    hover="#FFFFFF14", track="#48484A", danger="#FF453A", shadow=(0, 0, 0), accent="#B39DFF",
 )
 
 

@@ -77,7 +77,7 @@ class ReaderApp:
         self._set_status(f"Bereit · {hotkey_label(self.config['hotkey'])}")
 
         self.save_timer = QTimer(singleShot=True, interval=400, timeout=self._save)
-        self.ticker = QTimer(interval=100, timeout=self._tick)
+        self.ticker = QTimer(interval=60, timeout=self._tick)  # word highlight follows speech
         self.message_timer = QTimer(singleShot=True, interval=1600, timeout=self._end_message)
         self.instance_timer = QTimer(interval=250, timeout=self._check_instance)
         self.instance_timer.start()
@@ -417,7 +417,9 @@ class ReaderApp:
             speed = self.config["speed"] * WORDS_PER_SECOND
             within = min(.95, since * speed / max(1, words[unit]))
             remaining = max(0.0, sum(words[unit:]) / speed - since)
-            self.hud.set_text(units[unit].strip())
+            word = self.playback.current_word()
+            spoken = (word[1], word[2]) if word and word[0] == unit else None
+            self.hud.set_text(" ".join(units[unit].split()), word=spoken)
             self.hud.set_progress((unit + within) / len(units), f"{unit + 1} / {len(units)}")
             self.hud.set_remaining(remaining)
             self.hud.set_navigation(True, unit + 1 < len(units))

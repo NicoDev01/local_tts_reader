@@ -72,13 +72,14 @@ def _voice_name(voice):
 
 
 def _report_boundaries(message, on_boundary):
-    """Pass each sentence's start (seconds into this request's audio) and text."""
+    """Pass each sentence and word start (seconds into this request's audio) with its text."""
+    kinds = {"SentenceBoundary": "sentence", "WordBoundary": "word"}
     try:
         body = json.loads(message.split("\r\n\r\n", 1)[1])
         for item in body.get("Metadata", ()):
-            if item.get("Type") == "SentenceBoundary":
+            if item.get("Type") in kinds:
                 data = item["Data"]
-                on_boundary(data["Offset"] / 1e7, unescape(data["text"]["Text"]))
+                on_boundary(data["Offset"] / 1e7, unescape(data["text"]["Text"]), kinds[item["Type"]])
     except (IndexError, KeyError, TypeError, ValueError):
         logging.debug("Satzgrenze nicht lesbar", exc_info=True)
 
@@ -176,14 +177,15 @@ class HighFidelityTTSClient:
         config = TTSConfig(voice=_voice_name(voice), rate=rate, volume=volume, pitch=pitch,
                            boundary="SentenceBoundary")
         ws = await self._take_ws()
+        flag = "true" if on_boundary else "false"
         try:
-            # Request 96kbps HD audio stream; sentence offsets drive the player's sentence display.
+            # Request 96kbps HD audio stream; sentence and word offsets drive the player's text display.
             cmd = (
                 f"X-Timestamp:{date_to_string()}\r\n"
                 "Content-Type:application/json; charset=utf-8\r\n"
                 "Path:speech.config\r\n\r\n"
                 '{"context":{"synthesis":{"audio":{"metadataoptions":{'
-                f'"sentenceBoundaryEnabled":"{"true" if on_boundary else "false"}","wordBoundaryEnabled":"false"'
+                f'"sentenceBoundaryEnabled":"{flag}","wordBoundaryEnabled":"{flag}"'
                 '},'
                 '"outputFormat":"audio-24khz-96kbitrate-mono-mp3"'
                 "}}}}\r\n"
@@ -219,7 +221,7 @@ class HighFidelityTTSClient:
             if chunk["type"] == "audio":
                 yield chunk["data"]
             elif chunk["type"] == "SentenceBoundary" and on_boundary:
-                on_boundary(chunk["offset"] / 1e7, chunk["text"])
+                on_boundary(chunk["offset"] / 1e7, chunk["text"], "sentence")
 
     async def synthesize_stream(
         self,
@@ -232,7 +234,7 @@ class HighFidelityTTSClient:
     ) -> AsyncIterator[Tuple[np.ndarray, int]]:
         """Yield 24 kHz Float32 mono pieces while the service is still speaking.
 
-        ``on_boundary(seconds, text)`` receives each sentence start. The fallback
+        ``on_boundary(seconds, text, kind)`` receives each sentence and word start. The fallback
         is used only if the HD path fails before any audio was yielded; a later
         failure raises, since repeating audio would be worse.
         """
