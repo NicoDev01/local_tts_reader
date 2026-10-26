@@ -125,21 +125,26 @@ class SmoothTests(unittest.TestCase):
         finally:
             controller.close()
 
-    def test_pause_outputs_silence_and_resumes_same_position(self):
+    def test_pause_glides_to_silence_and_resumes_same_position(self):
         stream, paused = FakeStream(), threading.Event()
         player = AudioPlayer(lambda **kw: stream)
         def change(n):
             if n == 2:
                 paused.set()
-            if n == 5:
+            if n == 12:
                 paused.clear()
         stream.callback = change
         try:
             player.play(PreparedAudio(np.full(9600, .1, dtype='float32'), 1),
                         48000, '', threading.Event(), paused)
-            self.assertTrue(all(np.max(b) == 0 for b in stream.blocks[2:5]))
+            peaks = [float(np.max(np.abs(b))) for b in stream.blocks]
+            fade = peaks[2:6]  # 80 ms = four 960-sample blocks glide down, no hard cut
+            self.assertTrue(all(a > b for a, b in zip(fade, fade[1:])) and fade[0] > .05)
+            self.assertTrue(all(p == 0 for p in peaks[6:12]), 'silence while paused')
+            resumed = stream.blocks[12]
+            self.assertLess(float(np.abs(resumed[0]).max()), .03, 'resume fades in')
             speech_frames = sum(len(b) for b in stream.blocks if np.max(b) > 0)
-            self.assertEqual(speech_frames, 9600)
+            self.assertEqual(speech_frames, 9600, 'nothing skipped by the fade')
         finally:
             player.close()
 

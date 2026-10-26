@@ -13,6 +13,7 @@ import pedalboard as pb
 
 OUTPUT_SAMPLE_RATE = 48000
 OUTPUT_CHANNELS = 2
+PAUSE_FADE = int(OUTPUT_SAMPLE_RATE * .08)  # 80 ms glide on pause and resume
 
 # Dry EQ profiles. The default avoids compression pumping and limiter latency.
 MASTERING_PROFILES = {
@@ -167,6 +168,7 @@ class AudioPlayer:
         self.profile = "studio_warmth"
         self.stream_factory = stream_factory or sd.OutputStream
         self._last_gain = 1.0
+        self._mix = 1.0  # pause fade level
         self._stream = None
         self.cursor = None  # (marker, seconds) of the block just written
         self.underflows = 0
@@ -207,10 +209,16 @@ class AudioPlayer:
                 audio = board(audio, OUTPUT_SAMPLE_RATE, reset=True)
         return np.ascontiguousarray(audio, dtype=np.float32)
 
-    def _gain(self, mono):
+    def _gain(self, mono, fade_out=False):
         _, volume = self.controls()
         ramp = np.linspace(self._last_gain, volume, len(mono), dtype=np.float32)
         self._last_gain = volume
+        # Pause and resume glide over PAUSE_FADE instead of cutting mid-word.
+        step = len(mono) / PAUSE_FADE
+        mix = max(0.0, self._mix - step) if fade_out else min(1.0, self._mix + step)
+        if mix != 1.0 or self._mix != 1.0:
+            ramp = ramp * np.linspace(self._mix, mix, len(mono), dtype=np.float32)
+        self._mix = mix
         mono = mono * ramp
         # Transparent below 90%; a smooth knee avoids hard clipping at >100% volume.
         magnitude = np.abs(mono)
@@ -253,6 +261,7 @@ class AudioPlayer:
         try:
             stream.start()
             self._last_gain = self.controls()[1]
+            self._mix = 1.0
             # Some Windows/Bluetooth drivers report an empty buffer on their
             # very first write. Prime with 100 ms silence before any consonant.
             self.startup_underflows = int(bool(stream.write(np.zeros((4800, 2), dtype=np.float32))))
@@ -301,8 +310,9 @@ class AudioPlayer:
             source_offset = 0
             output_offset = 0
             while source_offset < len(source) and not cancel.is_set():
-                while paused.is_set() and not cancel.is_set():
-                    self.write_silence()
+                if paused.is_set() and self._mix <= 0.0:  # faded out: hold silence
+                    while paused.is_set() and not cancel.is_set():
+                        self.write_silence()
                 if cancel.is_set():
                     break
                 requested, _ = self.controls()
@@ -338,7 +348,7 @@ class AudioPlayer:
                 block = rendered[output_offset:output_offset + 960]
                 if not len(block):
                     break
-                self._write(self._gain(block))
+                self._write(self._gain(block, paused.is_set()))
                 output_offset += len(block)
                 stable_frames += len(block)
                 source_offset = min(len(source), round(output_offset * rate))
