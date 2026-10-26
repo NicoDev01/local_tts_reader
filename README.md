@@ -35,7 +35,7 @@ Violett, kommende Wörter gedämpft. Dazu Fortschritt und ungefähre Restzeit.
 - **Lautsprecher:** Klick schaltet stumm; das Mausrad ändert die Lautstärke (**0 bis 150 %**, unabhängig von Windows).
 - **Minus** klappt ihn zu einer Pille mit Pause-Taste und Satzzähler ein; ein Klick auf die Pille klappt ihn auf. **×** beendet das Vorlesen.
 - Die Satzanzeige nutzt die Satzzeitpunkte, die der Sprachdienst mitliefert; die Restzeit ist eine Schätzung (2,5 Wörter/s bei 1×).
-- **Tempo ändern während des Vorlesens:** Der Sprachdienst spricht im angeforderten Tempo; nachträgliches Strecken klang verzerrt. Deshalb wird der Rest im neuen Tempo neu erzeugt: kurz nach Satzbeginn sofort, sonst ab dem nächsten Satz (nach dem letzten Wort des laufenden Satzes). Bis dahin wird nur der laufende Satz angepasst.
+- **Tempo ändern während des Vorlesens:** Der laufende Satz wird weder unterbrochen noch gestreckt (Strecken klang verzerrt). Der Mini-Player zeigt sofort den neuen Wert und „ab nächstem Satz“; ab dann kommt frisch im neuen Tempo erzeugte Sprache. Nur im letzten Satz wird das Tempo direkt angepasst.
 - Lautstärke wirkt sofort, auch auf bereits geladenes Audio.
 
 ## Leseansicht

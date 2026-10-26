@@ -235,22 +235,16 @@ class RespeedTests(unittest.TestCase):
             for seconds, word, duration in ((0.1, 'Erster', .3), (.5, 'Satz', .3), (.9, 'hier', .4)):
                 handle(seconds, word, 'word', duration)
             handle(1.6, 'Zweiter Satz.')
-            self.assertIsNone(controller.respeed(config), 'same tempo: nothing to do')
+            self.assertIsNone(controller.respeed_plan(1.0), 'same tempo: nothing to do')
             controller.player.cursor = ((job, 0), 1.2)
             self.assertFalse(controller.sentence_finished(0))
             controller.player.cursor = ((job, 0), 1.35)
             self.assertTrue(controller.sentence_finished(0), 'last word ended at 1.3 s')
-            controller.player.cursor = ((job, 0), .4)
-            faster = dict(config, speed=1.5)
-            self.assertIsNone(controller.respeed(faster))  # early in the sentence: restart it now
-            self.assertIsNot(controller.current, job)
-            self.assertEqual((controller.current.first, controller.current.speed), (0, 1.5))
-            controller.stop()
-            controller.current = job
-            controller.player.cursor = ((job, 0), 1.2)
-            job.boundaries[0] = [(0.0, 0)]
-            with patch.object(controller, 'position', return_value=(0, 1.6)):
-                self.assertEqual(controller.respeed(faster), 1, 'later in the sentence: switch at the next one')
+            self.assertEqual(controller.respeed_plan(1.5), ('next', 1), 'never cut the running sentence')
+            with patch.object(controller, 'position', return_value=None):
+                self.assertEqual(controller.respeed_plan(1.5), ('now', 0), 'nothing audible yet')
+            with patch.object(controller, 'position', return_value=(2, .5)):
+                self.assertEqual(controller.respeed_plan(1.5), ('stretch', None), 'last sentence')
         finally:
             controller.close()
             controller.player.close()

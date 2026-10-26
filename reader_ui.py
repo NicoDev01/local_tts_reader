@@ -209,14 +209,31 @@ class ReaderApp:
         if value == self.config[key]:
             return
         self.config[key] = value
-        self.playback.player.set_controls(self.config["speed"], self.config["volume"])
+        reading = self.state in ("reading", "buffering", "preparing")
+        # While reading, the running sentence keeps its tempo (no warped audio); the new
+        # tempo arrives with freshly generated speech from the next sentence on.
+        speed = self.playback.player.controls()[0] if reading else self.config["speed"]
+        self.playback.player.set_controls(speed, self.config["volume"])
         self._render_controls()
         self.save_timer.start()
-        if key == "speed" and self.state in ("reading", "buffering", "preparing"):
+        if key == "speed" and reading:
             self.speed_timer.start()  # settle first: slider drags and wheel steps come in bursts
 
     def _respeed(self):
-        self.pending_respeed = self.playback.respeed(self.config)
+        plan = self.playback.respeed_plan(self.config["speed"])
+        self.pending_respeed = None
+        if plan is None or plan[0] == "stretch":  # unchanged, or the last sentence: adjust it live
+            self.playback.player.set_controls(self.config["speed"], self.config["volume"])
+        elif plan[0] == "now":
+            self._restart_at(plan[1])
+        else:
+            self.pending_respeed = plan[1]
+        self._render_state()
+
+    def _restart_at(self, unit):
+        job = self.playback.current
+        self.playback.player.set_controls(self.config["speed"], self.config["volume"])
+        self.playback.start(None, self.config, units=job.units, first=unit)
 
     def _switch_speed_if_due(self):
         target = self.pending_respeed
@@ -225,8 +242,7 @@ class ReaderApp:
             return
         if position[0] >= target or self.playback.sentence_finished(target - 1):
             self.pending_respeed = None
-            job = self.playback.current
-            self.playback.start(None, self.config, units=job.units, first=target)
+            self._restart_at(target)
 
     def _render_controls(self):
         self.window.set_controls(self.config["speed"], self.config["volume"])
@@ -514,7 +530,8 @@ class ReaderApp:
             self.hud.set_text(" ".join(units[unit].split()), word=spoken)
             done = sum(words[:unit]) + within * words[unit]  # by words, so bar and time agree
             self.hud.set_progress(done / max(1, sum(words)), f"{unit + 1} / {len(units)}")
-            self.hud.set_remaining(remaining)
+            self.hud.set_remaining(remaining, note="ab nächstem Satz"
+                                   if self.pending_respeed is not None else None)
             self.hud.set_navigation(True, unit + 1 < len(units))
             if self.view.isVisible():
                 self.view.show_text(units, unit, spoken)

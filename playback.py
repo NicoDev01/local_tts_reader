@@ -188,22 +188,21 @@ class PlaybackController:
         last = max(inside, key=lambda w: w[1])
         return cursor[1] >= last[0] + last[3]
 
-    def respeed(self, config):
-        """The service speaks at the requested tempo; stretching that audio later sounds
-        warped. So a new tempo is generated afresh: right away early in a sentence,
-        otherwise from the next sentence. Returns that next unit, to switch at its start."""
+    def respeed_plan(self, speed):
+        """How to bring in a new tempo without warping audio or cutting a sentence.
+
+        The service speaks at the requested tempo, so the new tempo is generated afresh.
+        Returns ("now", unit) before anything is audible, ("next", unit) to switch after
+        the running sentence, ("stretch", None) in the last sentence, or None if unchanged.
+        """
         job = self.current
-        if not job or job.done.is_set() or not job.units or abs(job.speed - config["speed"]) < .01:
+        if not job or job.done.is_set() or not job.units or abs(job.speed - speed) < .01:
             return None
         position = self.position()
         if not position:
-            self.start(None, config, units=job.units, first=job.first)
-            return None
-        unit, since = position
-        if since < 1.5:
-            self.start(None, config, units=job.units, first=unit)
-            return None
-        return unit + 1 if unit + 1 < len(job.units) else None
+            return "now", job.first
+        unit = position[0]
+        return ("next", unit + 1) if unit + 1 < len(job.units) else ("stretch", None)
 
     def jump(self, delta, config):
         """Restart at the next (+1) or previous (-1) sentence.

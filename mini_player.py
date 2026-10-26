@@ -432,7 +432,13 @@ class MiniPlayer(QWidget):
         self.progress.set_value(value)
         self.counter.setText(counter)
 
-    def set_remaining(self, seconds):
+    def set_remaining(self, seconds, note=None):
+        """Remaining time, or a short ``note`` in the accent color (e.g. a pending tempo)."""
+        if note:
+            self.remaining.setStyleSheet(f"color: {Theme.colors['accent']};")
+            self.remaining.setText(note)
+            return
+        self.remaining.setStyleSheet("")
         if seconds is None:
             self.remaining.setText("")
         else:
