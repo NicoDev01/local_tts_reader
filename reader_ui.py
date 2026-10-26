@@ -12,6 +12,7 @@ from clipboard_capture import capture_selection
 from mini_player import MiniPlayer
 from playback import PlaybackController
 from settings import DEFAULTS, VOICES, load_config, save_config, set_autostart, is_autostart_enabled
+from reading_view import ReadingView
 from settings_window import SettingsWindow
 from ui_theme import Theme, tray_icon
 from ui_widgets import key_label
@@ -69,6 +70,7 @@ class ReaderApp:
         self.playback = PlaybackController(lambda *event: self.bridge.playback.emit(*event), self.config)
         self.hud = MiniPlayer()
         self.window = SettingsWindow(self.config)
+        self.view = ReadingView()
         self._connect_ui()
         self._setup_tray()
         self._register_hotkeys()
@@ -96,6 +98,12 @@ class ReaderApp:
         h.volume_step.connect(lambda d: self.set_control("volume", self.config["volume"] + d * .05))
         h.set_anchor(self.config["hud_anchor"])
         h.moved.connect(self._hud_moved)
+        h.open_view.connect(self.show_view)
+        v = self.view
+        v.jump.connect(self.jump_to)
+        v.toggle_pause.connect(self.toggle_pause)
+        v.previous.connect(lambda: self.jump(-1))
+        v.next.connect(lambda: self.jump(1))
         w.control_changed.connect(self.set_control)
         w.choice_changed.connect(self.set_choice)
         w.toggle_changed.connect(self._toggle)
@@ -108,7 +116,8 @@ class ReaderApp:
         self.tray = QSystemTrayIcon(tray_icon())
         self.tray.setToolTip("Vorleser · Bereit")
         menu = QMenu()
-        for label, slot in (("Einstellungen öffnen", self.show_window), ("Pause / Weiter", self.toggle_pause),
+        for label, slot in (("Einstellungen öffnen", self.show_window), ("Leseansicht öffnen", self.show_view),
+                            ("Pause / Weiter", self.toggle_pause),
                             ("Vorlesen beenden", self.stop)):
             action = QAction(label, menu)
             action.triggered.connect(slot)
@@ -231,6 +240,7 @@ class ReaderApp:
         Theme.apply(self.config["theme"])
         self.window.refresh_theme()
         self.hud.refresh_theme()
+        self.view.refresh_theme()
 
     def _toggle(self, key, enabled):
         if key == "autostart":
@@ -301,6 +311,25 @@ class ReaderApp:
         self._enter("preparing", "Wird vorbereitet …")
         self.ticker.start()
 
+    def jump_to(self, unit):
+        """Read from a sentence picked in the reading view (also after reading ended)."""
+        job = self.playback.current
+        units = job.units if job and job.units else (self.last or {}).get("units")
+        if units:
+            self.read_text(None, units=units, first=unit)
+            self.view.set_paused(False)
+
+    def show_view(self):
+        job = self.playback.current
+        if job and job.units:
+            position = self.playback.position()
+            self.view.show_text(job.units, position[0] if position else job.first)
+        elif self.last:
+            self.view.show_text(self.last["units"], self.last["unit"])
+        self.view.show()
+        self.view.raise_()
+        self.view.activateWindow()
+
     def jump(self, delta):
         job = self.playback.current
         if not job or job.done.is_set():
@@ -347,6 +376,7 @@ class ReaderApp:
             return
         paused = self.playback.toggle_pause()
         self.hud.set_paused(paused)
+        self.view.set_paused(paused)
         self._render_state()
 
     def stop(self):
@@ -423,6 +453,8 @@ class ReaderApp:
             self.hud.set_progress((unit + within) / len(units), f"{unit + 1} / {len(units)}")
             self.hud.set_remaining(remaining)
             self.hud.set_navigation(True, unit + 1 < len(units))
+            if self.view.isVisible():
+                self.view.show_text(units, unit, spoken)
         if paused:
             status = "Pausiert"
         elif self.state == "buffering":

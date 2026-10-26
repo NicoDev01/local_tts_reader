@@ -177,7 +177,8 @@ class MiniPlayer(QWidget):
     speed_step = Signal(int)
     volume_toggle = Signal()
     volume_step = Signal(int)
-    moved = Signal(object)  # new bottom-right anchor [x, y], or None after a reset
+    moved = Signal(object)
+    open_view = Signal()  # new bottom-right anchor [x, y], or None after a reset
 
     def __init__(self):
         super().__init__(None, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
@@ -210,11 +211,13 @@ class MiniPlayer(QWidget):
         self.sentence.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self.sentence.setFixedHeight(QFontMetrics(ui_font(10)).lineSpacing() * 2 + 2)
         top.addWidget(self.sentence, 1)
+        self.view_btn = IconButton("book-open", 22, 13, tooltip="Leseansicht: ganzer Text")
+        self.view_btn.clicked.connect(self.open_view)
         self.collapse_btn = IconButton("minus", 22, 13, tooltip="Einklappen")
         self.close_btn = IconButton("x", 22, 13, tooltip="Vorlesen beenden (Esc)")
         self.collapse_btn.clicked.connect(self.collapse)
         self.close_btn.clicked.connect(self.stop)
-        for b in (self.collapse_btn, self.close_btn):
+        for b in (self.view_btn, self.collapse_btn, self.close_btn):
             top.addWidget(b, 0, Qt.AlignmentFlag.AlignTop)
         v.addLayout(top)
         self.progress = ProgressLine()
@@ -352,7 +355,7 @@ class MiniPlayer(QWidget):
     def _render_text(self):
         color = Theme.colors["secondary" if self._is_status else "text"]
         self.sentence.setStyleSheet(f"color: {color};")
-        width = EXPANDED[0] - 16 - 10 - 2 * 24
+        width = EXPANDED[0] - 16 - 10 - 3 * 24
         metrics = QFontMetrics(self.sentence.font())
         if self._is_status or not getattr(self, "_word", None):
             self.sentence.setTextFormat(Qt.TextFormat.PlainText)

@@ -83,6 +83,8 @@ def stylesheet(c):
     QSlider::sub-page:horizontal {{ background: {c['primary']}; border-radius: 2px; }}
     QSlider::handle:horizontal {{ background: {c['card']}; border: 1px solid {c['border']}; width: 16px; height: 16px;
         margin: -7px 0; border-radius: 9px; }}
+    QTextBrowser#Reader {{ background: {c['card']}; border: 1px solid {c['border']}; border-radius: 20px; }}
+    QTextBrowser#Reader > QWidget {{ background: transparent; }}
     QPlainTextEdit {{ background: transparent; border: none; selection-background-color: {c['track']}; }}
     QPushButton#Primary {{ background: {c['primary']}; color: {c['on_primary']}; border: none; border-radius: 14px;
         min-height: 18px; padding: 5px 18px; font-weight: 600; }}
@@ -111,6 +113,8 @@ ICONS = {
                 '<line x1="22" x2="16" y1="9" y2="15"/><line x1="16" x2="22" y1="9" y2="15"/>',
     "minus": '<path d="M5 12h14"/>',
     "chevron-down": '<path d="m6 9 6 6 6-6"/>',
+    "book-open": '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5'
+                 'a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>',
     "x": '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
     "audio-lines": '<path d="M2 10v3"/><path d="M6 6v11"/><path d="M10 3v18"/><path d="M14 8v7"/>'
                    '<path d="M18 5v13"/><path d="M22 10v3"/>',
