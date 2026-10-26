@@ -2,6 +2,7 @@ import asyncio
 import io
 import threading
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 import soundfile as sf
@@ -218,3 +219,38 @@ class WordHighlightTests(unittest.TestCase):
         self.assertIn(f'color:{LIGHT["accent"]};">Wort35<', late)
         self.assertIn('Wort34', late)  # context before the current word stays visible
         self.assertNotIn('>Wort0<', late)
+
+
+class RespeedTests(unittest.TestCase):
+    def test_new_tempo_is_generated_not_stretched(self):
+        controller = PlaybackController(lambda *a: None, DEFAULTS, StreamingClient(), RecordingPlayer())
+        try:
+            units = ['Erster Satz hier.', 'Zweiter Satz.', 'Dritter Satz.']
+            config = dict(DEFAULTS, speed=1.0)
+            job = controller.start(None, config, units=units)
+            controller.stop()
+            controller.current = job
+            handle = job.boundary_handler(0)
+            handle(0.0, 'Erster Satz hier.')
+            for seconds, word, duration in ((0.1, 'Erster', .3), (.5, 'Satz', .3), (.9, 'hier', .4)):
+                handle(seconds, word, 'word', duration)
+            handle(1.6, 'Zweiter Satz.')
+            self.assertIsNone(controller.respeed(config), 'same tempo: nothing to do')
+            controller.player.cursor = ((job, 0), 1.2)
+            self.assertFalse(controller.sentence_finished(0))
+            controller.player.cursor = ((job, 0), 1.35)
+            self.assertTrue(controller.sentence_finished(0), 'last word ended at 1.3 s')
+            controller.player.cursor = ((job, 0), .4)
+            faster = dict(config, speed=1.5)
+            self.assertIsNone(controller.respeed(faster))  # early in the sentence: restart it now
+            self.assertIsNot(controller.current, job)
+            self.assertEqual((controller.current.first, controller.current.speed), (0, 1.5))
+            controller.stop()
+            controller.current = job
+            controller.player.cursor = ((job, 0), 1.2)
+            job.boundaries[0] = [(0.0, 0)]
+            with patch.object(controller, 'position', return_value=(0, 1.6)):
+                self.assertEqual(controller.respeed(faster), 1, 'later in the sentence: switch at the next one')
+        finally:
+            controller.close()
+            controller.player.close()

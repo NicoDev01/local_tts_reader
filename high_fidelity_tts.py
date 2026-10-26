@@ -79,7 +79,8 @@ def _report_boundaries(message, on_boundary):
         for item in body.get("Metadata", ()):
             if item.get("Type") in kinds:
                 data = item["Data"]
-                on_boundary(data["Offset"] / 1e7, unescape(data["text"]["Text"]), kinds[item["Type"]])
+                on_boundary(data["Offset"] / 1e7, unescape(data["text"]["Text"]), kinds[item["Type"]],
+                            data.get("Duration", 0) / 1e7)
     except (IndexError, KeyError, TypeError, ValueError):
         logging.debug("Satzgrenze nicht lesbar", exc_info=True)
 

@@ -80,6 +80,8 @@ class ReaderApp:
 
         self.save_timer = QTimer(singleShot=True, interval=400, timeout=self._save)
         self.ticker = QTimer(interval=60, timeout=self._tick)  # word highlight follows speech
+        self.speed_timer = QTimer(singleShot=True, interval=450, timeout=self._respeed)
+        self.pending_respeed = None  # sentence at which the new tempo takes over
         self.message_timer = QTimer(singleShot=True, interval=1600, timeout=self._end_message)
         self.instance_timer = QTimer(interval=250, timeout=self._check_instance)
         self.instance_timer.start()
@@ -207,6 +209,21 @@ class ReaderApp:
         self.playback.player.set_controls(self.config["speed"], self.config["volume"])
         self._render_controls()
         self.save_timer.start()
+        if key == "speed" and self.state in ("reading", "buffering", "preparing"):
+            self.speed_timer.start()  # settle first: slider drags and wheel steps come in bursts
+
+    def _respeed(self):
+        self.pending_respeed = self.playback.respeed(self.config)
+
+    def _switch_speed_if_due(self):
+        target = self.pending_respeed
+        position = self.playback.position()
+        if target is None or not position:
+            return
+        if position[0] >= target or self.playback.sentence_finished(target - 1):
+            self.pending_respeed = None
+            job = self.playback.current
+            self.playback.start(None, self.config, units=job.units, first=target)
 
     def _render_controls(self):
         self.window.set_controls(self.config["speed"], self.config["volume"])
@@ -380,6 +397,7 @@ class ReaderApp:
         self._render_state()
 
     def stop(self):
+        self.pending_respeed = None
         self.capture_cancel.set()
         self._remember()
         self.playback.stop()
@@ -431,6 +449,8 @@ class ReaderApp:
             self.stop()
 
     def _tick(self):
+        if self.pending_respeed is not None:
+            self._switch_speed_if_due()
         if self.state in ("reading", "buffering"):
             self._render_state()
 

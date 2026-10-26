@@ -36,7 +36,8 @@ class Reading:
     sections: list = field(default_factory=list)    # (first, end) unit ranges sent as one request
     first: int = 0                                  # unit this reading starts at
     boundaries: dict = field(default_factory=dict)  # section -> [(seconds, unit)]
-    words: dict = field(default_factory=dict)       # section -> [(seconds, char, length)]
+    words: dict = field(default_factory=dict)       # section -> [(seconds, char, length, duration)]
+    speed: float = 1.0                              # tempo the service was asked for
     unit_chars: dict = field(default_factory=dict)  # section -> char start of each unit
 
     def reserve(self, seconds):
@@ -64,14 +65,14 @@ class Reading:
         self.unit_chars[section] = offsets
         word_position = 0
 
-        def handle(seconds, spoken, kind="sentence"):
+        def handle(seconds, spoken, kind="sentence", duration=0.0):
             nonlocal position, word_position
             if kind == "word":
                 probe = flat(spoken)
                 at = text.find(probe, word_position) if probe else -1
                 if at >= 0:
                     word_position = at + len(probe)
-                    words.append((seconds, at, len(probe)))
+                    words.append((seconds, at, len(probe), duration))
                 return
             probe = flat(spoken)[:24]
             at = text.find(probe, position) if probe else -1
@@ -114,6 +115,7 @@ class PlaybackController:
         job = Reading()
         job.units = list(units) if units is not None else split_units(text)
         job.first = max(0, min(first, len(job.units)))
+        job.speed = config["speed"]
         job.sections = [(start + job.first, end + job.first)
                         for start, end in group_ranges(job.units[job.first:])]
         self.current = job
@@ -162,10 +164,46 @@ class PlaybackController:
         spoken = [w for w in list(job.words.get(section, ())) if w[0] <= cursor[1] + .02]
         if not spoken:
             return None
-        _, at, length = spoken[-1]
+        _, at, length, _ = spoken[-1]
         offsets = job.unit_chars[section]
         index = max(i for i, o in enumerate(offsets) if o <= at)
         return job.sections[section][0] + index, at - offsets[index], length
+
+    def sentence_finished(self, unit):
+        """True once the last word of ``unit`` has been spoken (the pause before the next)."""
+        job = self.current
+        cursor = getattr(self.player, 'cursor', None)
+        if not job or not cursor or cursor[0] is None or cursor[0][0] is not job:
+            return False
+        _, section = cursor[0]
+        start, end = job.sections[section]
+        if not start <= unit < end:
+            return False
+        offsets = job.unit_chars.get(section, [])
+        low = offsets[unit - start]
+        high = offsets[unit - start + 1] if unit - start + 1 < len(offsets) else float('inf')
+        inside = [w for w in list(job.words.get(section, ())) if low <= w[1] < high]
+        if not inside:
+            return False
+        last = max(inside, key=lambda w: w[1])
+        return cursor[1] >= last[0] + last[3]
+
+    def respeed(self, config):
+        """The service speaks at the requested tempo; stretching that audio later sounds
+        warped. So a new tempo is generated afresh: right away early in a sentence,
+        otherwise from the next sentence. Returns that next unit, to switch at its start."""
+        job = self.current
+        if not job or job.done.is_set() or not job.units or abs(job.speed - config["speed"]) < .01:
+            return None
+        position = self.position()
+        if not position:
+            self.start(None, config, units=job.units, first=job.first)
+            return None
+        unit, since = position
+        if since < 1.5:
+            self.start(None, config, units=job.units, first=unit)
+            return None
+        return unit + 1 if unit + 1 < len(job.units) else None
 
     def jump(self, delta, config):
         """Restart at the next (+1) or previous (-1) sentence.
