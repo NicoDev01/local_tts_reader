@@ -82,6 +82,7 @@ class ReaderApp:
         self.ticker = QTimer(interval=60, timeout=self._tick)  # word highlight follows speech
         self.speed_timer = QTimer(singleShot=True, interval=450, timeout=self._respeed)
         self.pending_respeed = None  # sentence at which the new tempo takes over
+        self.scrubbing = False
         self.message_timer = QTimer(singleShot=True, interval=1600, timeout=self._end_message)
         self.instance_timer = QTimer(interval=250, timeout=self._check_instance)
         self.instance_timer.start()
@@ -101,6 +102,8 @@ class ReaderApp:
         h.set_anchor(self.config["hud_anchor"])
         h.moved.connect(self._hud_moved)
         h.open_view.connect(self.show_view)
+        h.seek_preview.connect(self._preview_seek)
+        h.seek.connect(self._seek)
         v = self.view
         v.jump.connect(self.jump_to)
         v.toggle_pause.connect(self.toggle_pause)
@@ -326,7 +329,41 @@ class ReaderApp:
         self.playback.start(text, self.config, units=units, first=first)
         self.hud.set_paused(False)
         self._enter("preparing", "Wird vorbereitet …")
+        if units and first:  # a jump: keep the bar at the new spot until audio starts
+            words = [len(u.split()) for u in units]
+            self.hud.set_progress(sum(words[:first]) / max(1, sum(words)))
         self.ticker.start()
+
+    def _unit_at(self, fraction):
+        """Sentence that starts at or before ``fraction`` of the text (by words)."""
+        job = self.playback.current
+        if not job or not job.units:
+            return None, None
+        words = [len(u.split()) for u in job.units]
+        target, start = fraction * sum(words), 0
+        for unit, count in enumerate(words):
+            if start + count > target or unit == len(words) - 1:
+                return unit, start
+            start += count
+
+    def _preview_seek(self, fraction):
+        unit, words_before = self._unit_at(fraction)
+        if unit is None:
+            return
+        if not self.scrubbing:
+            self.playback.prewarm()  # connect while the finger is still on the bar
+        self.scrubbing = True
+        units = self.playback.current.units
+        seconds = int(words_before / (self.config["speed"] * WORDS_PER_SECOND))
+        self.hud.set_text(" ".join(units[unit].split()), status=True)
+        self.hud.set_progress(fraction, f"{unit + 1} / {len(units)}")
+        self.hud.remaining.setText(f"{seconds // 60}:{seconds % 60:02d}")
+
+    def _seek(self, fraction):
+        unit, _ = self._unit_at(fraction)
+        self.scrubbing = False
+        if unit is not None:
+            self.jump_to(unit)
 
     def jump_to(self, unit):
         """Read from a sentence picked in the reading view (also after reading ended)."""
@@ -351,10 +388,13 @@ class ReaderApp:
         job = self.playback.current
         if not job or job.done.is_set():
             return
-        if self.playback.jump(delta, self.config) is None:
+        new = self.playback.jump(delta, self.config)
+        if new is None:
             return
         self.hud.set_paused(False)
         self._enter("preparing", self.hud._text)  # keep showing the sentence until audio starts
+        words = [len(u.split()) for u in new.units]
+        self.hud.set_progress(sum(words[:new.first]) / max(1, sum(words)))
 
     # -- last reading (kept in memory only; the text is never written to disk) ------
     def _remember(self, finished=False):
@@ -467,10 +507,13 @@ class ReaderApp:
             speed = self.config["speed"] * WORDS_PER_SECOND
             within = min(.95, since * speed / max(1, words[unit]))
             remaining = max(0.0, sum(words[unit:]) / speed - since)
+            if self.scrubbing:  # the preview owns the display while the bar is dragged
+                return
             word = self.playback.current_word()
             spoken = (word[1], word[2]) if word and word[0] == unit else None
             self.hud.set_text(" ".join(units[unit].split()), word=spoken)
-            self.hud.set_progress((unit + within) / len(units), f"{unit + 1} / {len(units)}")
+            done = sum(words[:unit]) + within * words[unit]  # by words, so bar and time agree
+            self.hud.set_progress(done / max(1, sum(words)), f"{unit + 1} / {len(units)}")
             self.hud.set_remaining(remaining)
             self.hud.set_navigation(True, unit + 1 < len(units))
             if self.view.isVisible():

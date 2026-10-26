@@ -16,7 +16,7 @@ from ui_widgets import IconButton
 from windows_runtime import prevent_activation
 
 SHADOW = 16
-EXPANDED = (340, 118)
+EXPANDED = (340, 124)
 COLLAPSED = (148, 44)
 
 
@@ -118,26 +118,79 @@ class Chip(QAbstractButton):
 
 
 class ProgressLine(QWidget):
+    """Progress that can be scrubbed like a music player: hover shows a knob, drag previews,
+    release seeks."""
+    scrubbed = Signal(float)
+    released = Signal(float)
+
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.value = 0.0
-        self.setFixedHeight(3)
+        self.value, self.drag = 0.0, None
+        self.setFixedHeight(16)
+        self.setMouseTracking(True)
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip("Ziehen oder klicken zum Spulen")
 
     def set_value(self, value):
         value = min(1.0, max(0.0, value))
-        if abs(value - self.value) > .001:
+        if self.drag is None and abs(value - self.value) > .001:
             self.value = value
             self.update()
+
+    def _fraction(self, event):
+        return min(1.0, max(0.0, event.position().x() / max(1, self.width())))
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.drag = self._fraction(event)
+            self.scrubbed.emit(self.drag)
+            self.update()
+        event.accept()  # never start dragging the whole player from here
+
+    def mouseMoveEvent(self, event):
+        if self.drag is not None:
+            self.drag = self._fraction(event)
+            self.scrubbed.emit(self.drag)
+            self.update()
+        event.accept()
+
+    def mouseReleaseEvent(self, event):
+        if self.drag is not None:
+            self.value, self.drag = self.drag, None  # hold the spot until playback catches up
+            self.released.emit(self.value)
+            self.update()
+        event.accept()
+
+    def enterEvent(self, event):
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.update()
+        super().leaveEvent(event)
 
     def paintEvent(self, _event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.setPen(Qt.PenStyle.NoPen)
+        active = self.underMouse() or self.drag is not None
+        thick = 5.0 if active else 3.0
+        y = (self.height() - thick) / 2
+        shown = self.drag if self.drag is not None else self.value
         p.setBrush(Theme.color("track"))
-        p.drawRoundedRect(QRectF(self.rect()), 1.5, 1.5)
-        if self.value > 0:
+        p.drawRoundedRect(QRectF(0, y, self.width(), thick), thick / 2, thick / 2)
+        if shown > 0:
             p.setBrush(Theme.color("accent"))
-            p.drawRoundedRect(QRectF(0, 0, max(3.0, self.width() * self.value), 3), 1.5, 1.5)
+            p.drawRoundedRect(QRectF(0, y, max(thick, self.width() * shown), thick), thick / 2, thick / 2)
+        if active:
+            x = min(max(self.width() * shown, 7.0), self.width() - 7.0)
+            p.setBrush(Theme.color("card"))
+            p.setPen(Theme.color("accent"))
+            p.drawEllipse(QRectF(x - 6.5, self.height() / 2 - 6.5, 13, 13))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(Theme.color("accent"))
+            p.drawEllipse(QRectF(x - 3.5, self.height() / 2 - 3.5, 7, 7))
 
 
 class LevelBars(QWidget):
@@ -177,8 +230,10 @@ class MiniPlayer(QWidget):
     speed_step = Signal(int)
     volume_toggle = Signal()
     volume_step = Signal(int)
-    moved = Signal(object)
-    open_view = Signal()  # new bottom-right anchor [x, y], or None after a reset
+    moved = Signal(object)  # new bottom-right anchor [x, y], or None after a reset
+    open_view = Signal()
+    seek_preview = Signal(float)  # 0..1 while the progress line is dragged
+    seek = Signal(float)          # 0..1 when it is released
 
     def __init__(self):
         super().__init__(None, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
@@ -203,7 +258,7 @@ class MiniPlayer(QWidget):
         self.expanded_view = QWidget()
         v = QVBoxLayout(self.expanded_view)
         v.setContentsMargins(16, 12, 10, 10)
-        v.setSpacing(8)
+        v.setSpacing(4)
         top = QHBoxLayout()
         top.setSpacing(2)
         self.sentence = QLabel()
@@ -221,6 +276,8 @@ class MiniPlayer(QWidget):
             top.addWidget(b, 0, Qt.AlignmentFlag.AlignTop)
         v.addLayout(top)
         self.progress = ProgressLine()
+        self.progress.scrubbed.connect(self.seek_preview)
+        self.progress.released.connect(self.seek)
         progress_row = QHBoxLayout()
         progress_row.setContentsMargins(0, 0, 6, 0)
         progress_row.addWidget(self.progress)
