@@ -25,7 +25,7 @@ SPEED_RANGE = (.7, 1.2)
 # Models for German reading on the text-to-speech endpoint; label, credit factor (pricing page:
 # Flash costs half of Multilingual v2), whether ``language_code`` is accepted.
 MODELS = {"eleven_flash_v2_5": ("Flash v2.5 · schnell, halber Preis", .5, True),
-          "eleven_multilingual_v2": ("Multilingual v2 · natürlicher", 1.0, False)}
+          "eleven_multilingual_v2": ("Multilingual v2 · Start nach ~2 s", 1.0, False)}
 ACCOUNT_SECONDS = 300   # account figures older than this are refreshed before trusting them
 QUOTA_RESERVE = 2000    # credits kept free so a reading never runs into paid overage
 INACTIVE = {"free", "free_disabled", "past_due", "incomplete"}
@@ -164,12 +164,16 @@ class ElevenLabsClient:
         """Subscription figures (tier, status, credits), cached; None if the key may not read them."""
         if refresh or self._account is None or time.monotonic() - self._account_at > ACCOUNT_SECONDS:
             try:
-                self._account = await self._get("/v1/user/subscription")
-                self._account_at, self._sent = time.monotonic(), 0
+                fresh = await self._get("/v1/user/subscription")
             except ElevenLabsError as error:
                 if error.code == "missing_permissions":
                     return None
                 raise
+            # The service counts with a delay (measured 2026-10-27), so requests sent since the
+            # last check stay pending until its counter has caught up with them.
+            counted = fresh.get("character_count", 0) - (self._account or {}).get("character_count", 0)
+            self._sent = max(0, self._sent - counted) if self._account and counted >= 0 else 0
+            self._account, self._account_at = fresh, time.monotonic()
         return self._account
 
     def remaining(self):
@@ -193,14 +197,15 @@ class ElevenLabsClient:
                                       f"(noch {max(0, self.remaining()):,} Credits).".replace(",", "."), True)
 
     async def catalog(self):
-        """Voices of the account (German ones first) and the account figures, for the settings."""
+        """Voices of the account (native German first, then German-capable) and the account figures."""
         data = await self._get("/v2/voices?page_size=100")
         voices = []
         for voice in data.get("voices", []):
             labels = voice.get("labels") or {}
-            german = labels.get("language") == "de" or any(
-                v.get("language") == "de" for v in voice.get("verified_languages") or [])
-            voices.append((not german, voice.get("name", "").split(" - ")[0], voice["voice_id"]))
+            german = any(v.get("language") == "de" for v in voice.get("verified_languages") or [])
+            rank = 0 if labels.get("language") == "de" else 1 if german else 2
+            name = re.split(r" [-|] ", voice.get("name", ""))[0].strip()
+            voices.append((rank, name, voice["voice_id"]))
         voices.sort(key=lambda v: (v[0], v[1].lower()))
         return dict(voices=[(voice_id, name) for _, name, voice_id in voices],
                     account=await self.account(refresh=True))

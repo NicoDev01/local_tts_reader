@@ -78,6 +78,8 @@ class FakeService:
     async def voices(self, request):
         return web.json_response(dict(voices=[
             dict(voice_id="en1", name="Adam - Deep", labels={}, verified_languages=[]),
+            dict(voice_id="en2", name="Bill | Wise", labels={"language": "en"},
+                 verified_languages=[{"language": "de"}]),
             dict(voice_id="de1", name="Lena - Warm", labels={"language": "de"})]))
 
     async def speak(self, request):
@@ -160,8 +162,24 @@ class ClientTests(unittest.TestCase):
                 finally:
                     await client.close()
         catalog = run(go())
-        self.assertEqual(catalog["voices"], [("de1", "Lena"), ("en1", "Adam")])
+        self.assertEqual(catalog["voices"], [("de1", "Lena"), ("en2", "Bill"), ("en1", "Adam")])
         self.assertEqual(catalog["account"]["tier"], "pro")
+
+
+class CounterTests(unittest.TestCase):
+    def test_delayed_counter_keeps_own_requests_pending(self):
+        client = ElevenLabsClient(lambda: "k")
+        counts = iter([1000, 1000, 1300])
+
+        async def get(path):
+            return dict(tier="pro", status="active", character_count=next(counts), character_limit=600000)
+        client._get = get
+        run(client.account(refresh=True))
+        client._sent = 500
+        run(client.account(refresh=True))  # service has not counted them yet
+        self.assertEqual(client.remaining(), 600000 - 1000 - 500)
+        run(client.account(refresh=True))  # 300 of them counted now
+        self.assertEqual(client.remaining(), 600000 - 1300 - 200)
 
 
 class FakeEdge:
