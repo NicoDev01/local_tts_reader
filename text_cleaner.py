@@ -553,7 +553,9 @@ def clean_text(text: str) -> str:
     # 21a. Function call empty parentheses: e.g. main() -> main
     text = re.sub(r'(\b[a-zA-Z_]\w*)\(\)', r'\1', text)
 
-    # 21b. Common file extensions in technical text: e.g. main_app.py -> main_app
+    # 21b. Common file extensions in technical text: e.g. main_app.py -> main_app.
+    # JavaScript frameworks named "X.js" are product names, not files: Node.js -> Node JS.
+    text = re.sub(r'\b(Node|Vue|Next|Nuxt|Express|Three|Chart|Deno)\.js\b', r'\1 JS', text)
     common_exts = r'([a-zA-Z0-9_-]+)\.(?:py|js|ts|tsx|jsx|html|css|json|md|txt|csv|bat|sh|exe|dll|zip|png|jpg|jpeg|svg|xml|yaml|yml|sql|pdf|docx?|xlsx?|pptx?)\b'
     text = re.sub(common_exts, r'\1', text, flags=re.IGNORECASE)
 
@@ -687,11 +689,31 @@ _ENGLISH_HYPHEN = re.compile(rf"(?i)\b({_ENGLISH})-(?=\w)|(?<=\w)-({_ENGLISH})\b
 # Killian, Katja and Conrad and recognized as the English word by Whisper (English mode)
 # in 3 of 3 cases on 2026-10-27; the original spelling sounded German ("Lock in", "Shortcode").
 # "Tray" has no such spelling: every variant was heard as "drei".
+# Developer words, measured the same way on 2026-10-27 (patterns match the text after clean_text,
+# e.g. "macOS" -> "mac OS", "OpenAI" -> "Open A I"). Marked 2/3: Killian and one more voice.
+# No spelling worked for Merge, Bug, Bugfix, Thread, Async and Await; "Build" already sounds like "Bild".
 RESPELLINGS = [
     (re.compile(r"\bclipboard(s?)\b", re.IGNORECASE), r"Clip Board\1"),
     (re.compile(r"\blogin(s?)\b", re.IGNORECASE), r"Logginn\1"),
     (re.compile(r"\bshortcut(s?)\b", re.IGNORECASE), r"Shortkatt\1"),
     (re.compile(r"\bcache\b", re.IGNORECASE), "Kässch"),
+    (re.compile(r"\breadme\b", re.IGNORECASE), "Riedmi"),
+    (re.compile(r"\bEleven ?Labs\b", re.IGNORECASE), "Ilewen Läbs"),
+    (re.compile(r"\brebase\b", re.IGNORECASE), "Ribäis"),
+    (re.compile(r"\bwebhook(s?)\b", re.IGNORECASE), r"Web Hook\1"),
+    (re.compile(r"\bbackend(s?)\b", re.IGNORECASE), r"Bäck End\1"),
+    (re.compile(r"\bdebugging\b", re.IGNORECASE), "Dibagging"),
+    (re.compile(r"\bworkspace(s?)\b", re.IGNORECASE), r"Work Space\1"),
+    (re.compile(r"\bJSON\b", re.IGNORECASE), "Jason"),
+    (re.compile(r"\bmac ?OS\b", re.IGNORECASE), "Mäk OS"),
+    (re.compile(r"\b(?i:open) ?A ?I\b"), "Open Eh Ei"),
+    (re.compile(r"\bgemini\b", re.IGNORECASE), "Dschemmini"),
+    (re.compile(r"\bJS\b"), "Dschäi Es"),
+    (re.compile(r"\bcommits\b", re.IGNORECASE), "Kommitts"),         # 2/3
+    (re.compile(r"\bchange ?log(s?)\b", re.IGNORECASE), r"Change Log\1"),  # 2/3, as the English voice
+    (re.compile(r"\barray(s?)\b", re.IGNORECASE), r"Ärräi\1"),        # 2/3
+    (re.compile(r"\bYAML\b", re.IGNORECASE), "Jammel"),               # 2/3
+    (re.compile(r"\bwhisper\b", re.IGNORECASE), "Uisper"),            # 2/3
 ]
 
 

@@ -67,6 +67,12 @@ die Stimme: Clipboard → „Clip Board“, Login → „Logginn“, Shortcut �
 „Tray“ klang bei den deutschen Stimmen in jeder Schreibweise wie „drei“; nur Florian spricht es
 englisch.
 
+Entwicklerbegriffe (geprüft 2026-10-27, 114 Wörter wie Git, Commit, Pull Request, Deployment, Docker,
+JavaScript): 22 klangen falsch. Neu in `RESPELLINGS` u. a. README → „Riedmi“, ElevenLabs → „Ilewen Läbs“,
+Backend → „Bäck End“, Debugging → „Dibagging“, JSON → „Jason“, macOS → „Mäk OS“, OpenAI → „Open Eh Ei“,
+Node.js → „Node Dschäi Es“ (Frameworks wie Node.js und Vue.js werden nicht mehr als Dateiendung
+abgeschnitten). Ohne funktionierende Schreibweise bleiben Merge, Bug, Bugfix, Thread, Async und Await.
+
 ## Einstellungen
 
 Alles auf einer Seite: Stimme mit Hörprobe, Tempo, Lautstärke, Klang, ein Feld für eigenen

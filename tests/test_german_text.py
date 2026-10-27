@@ -62,3 +62,15 @@ class RespellingTests(unittest.TestCase):
         self.assertEqual(speakable('Zwei Shortcuts im Clipboard.'), 'Zwei Shortkatts im Clip Board.')
         self.assertEqual(speakable('Leere den Cache.'), 'Leere den Kässch.')
         self.assertEqual(clean_text('Leere den Cache.'), 'Leere den Cache.')  # display unchanged
+
+    def test_developer_words_after_cleaning(self):
+        from text_cleaner import speakable
+        say = lambda text: speakable(clean_text(text))
+        self.assertEqual(say('Lies die README.md und den Changelog.'), 'Lies die Riedmi und den Change Log.')
+        self.assertEqual(say('ElevenLabs und OpenAI liefern JSON.'), 'Ilewen Läbs und Open Eh Ei liefern Jason.')
+        self.assertEqual(say('Unter macOS läuft Node.js.'), 'Unter Mäk OS läuft Node Dschäi Es.')
+        self.assertEqual(say('Der Webhook im Backend nach dem Rebase.'), 'Der Web Hook im Bäck End nach dem Ribäis.')
+
+    def test_js_frameworks_are_not_file_names(self):
+        self.assertEqual(clean_text('Mit Vue.js und Next.js.'), 'Mit Vue JS und Next JS.')
+        self.assertEqual(clean_text('Die Datei main.js.'), 'Die Datei main.')
