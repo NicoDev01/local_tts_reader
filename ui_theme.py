@@ -72,10 +72,10 @@ def stylesheet(c):
     QLabel#Footer {{ font-size: 8.5pt; }}
     QLabel#Value {{ color: {c['secondary']}; min-width: 44px; }}
     QLabel#KeyCap {{ background: {c['control']}; border-radius: 8px; padding: 2px 9px; min-height: 16px; color: {c['secondary']}; font-size: 8.5pt; }}
-    QComboBox {{ background: {c['control']}; border: none; border-radius: 15px; padding: 6px 30px 6px 14px; min-width: 150px; min-height: 18px; }}
-    QComboBox:hover {{ background: {c['track']}; }}
-    QComboBox::drop-down {{ border: none; width: 24px; }}
-    QComboBox::down-arrow {{ image: url("{icon_file('chevron-down', c['secondary'])}"); width: 12px; height: 12px;
+    QComboBox, QDateEdit {{ background: {c['control']}; border: none; border-radius: 15px; padding: 6px 30px 6px 14px; min-width: 150px; min-height: 18px; }}
+    QComboBox:hover, QDateEdit:hover {{ background: {c['track']}; }}
+    QComboBox::drop-down, QDateEdit::drop-down {{ border: none; width: 24px; }}
+    QComboBox::down-arrow, QDateEdit::down-arrow {{ image: url("{icon_file('chevron-down', c['secondary'])}"); width: 12px; height: 12px;
         margin-right: 10px; }}
     QComboBox QAbstractItemView {{ background: {c['card']}; border: 1px solid {c['border']}; border-radius: 14px;
         padding: 6px; outline: none; selection-background-color: {c['control']}; selection-color: {c['text']}; }}

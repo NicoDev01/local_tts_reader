@@ -1,7 +1,10 @@
 """Tray app wiring: hotkeys, playback, mini-player and settings. Qt runs on the main thread only."""
+import asyncio
+import datetime as dt
 import logging
 import re
 import threading
+import time
 
 import keyboard
 from PySide6.QtCore import QObject, QTimer, Signal
@@ -9,16 +12,19 @@ from PySide6.QtGui import QAction, QGuiApplication
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
 from clipboard_capture import capture_selection
+from elevenlabs_tts import KEY_NAME, ElevenLabsError, api_key
 from mini_player import MiniPlayer
 from playback import PlaybackController
 from settings import DEFAULTS, VOICES, load_config, save_config, set_autostart, is_autostart_enabled
 from reading_view import ReadingView
 from settings_window import SettingsWindow
+from speech_service import SpeechService, end_date, german_date
 from ui_theme import Theme, tray_icon
 from ui_widgets import key_label
 
 SPEED_STEPS = (1.0, 1.25, 1.5, 1.75, 2.0)
 WORDS_PER_SECOND = 2.5  # measured 2.5 words/s at 1.0x with the German voices (2026-10-26)
+ELEVEN_DAYS = 90        # free Pro period; the date can be changed in the settings
 HOTKEYS = {"hotkey": "capture", "pause_hotkey": "pause", "stop_hotkey": "stop",
            "prev_hotkey": "previous", "next_hotkey": "next"}
 HOTKEY_NAMES = {"hotkey": "Vorlesen", "pause_hotkey": "Pause / Weiter", "stop_hotkey": "Beenden",
@@ -49,6 +55,8 @@ class Bridge(QObject):
     action = Signal(str)
     playback = Signal(object, str, object)
     selection = Signal(object, str)
+    engine_off = Signal(str)     # ElevenLabs switched off, with the reason
+    catalog = Signal(object)     # finished future with the ElevenLabs voices and account
 
 
 class ReaderApp:
@@ -64,10 +72,17 @@ class ReaderApp:
         self.bridge.action.connect(self._on_action)
         self.bridge.playback.connect(self._on_playback)
         self.bridge.selection.connect(self._on_selection)
+        self.bridge.engine_off.connect(self._engine_off)
+        self.bridge.catalog.connect(self._on_catalog)
+        self.eleven_voices = {}
+        self.account = False      # False: not loaded yet; None: the key may not read it
+        self.catalog_at = 0.0
 
         Theme.apply(self.config["theme"])
         QGuiApplication.styleHints().colorSchemeChanged.connect(lambda _s: self._apply_theme())
-        self.playback = PlaybackController(lambda *event: self.bridge.playback.emit(*event), self.config)
+        self.speech = SpeechService(self.config, on_disable=self.bridge.engine_off.emit)
+        self.playback = PlaybackController(lambda *event: self.bridge.playback.emit(*event), self.config,
+                                           client=self.speech)
         self.hud = MiniPlayer()
         self.window = SettingsWindow(self.config)
         self.view = ReadingView()
@@ -88,6 +103,11 @@ class ReaderApp:
         self.instance_timer.start()
         if not self.config["welcomed"]:
             QTimer.singleShot(1200, self._welcome)
+        # An ended ElevenLabs period switches back to Edge right at start, not at the next reading.
+        QTimer.singleShot(0, lambda: self.speech.route(self.config))
+        self._render_eleven()
+        if self.config["engine"] == "elevenlabs":
+            QTimer.singleShot(0, self._load_catalog)
 
     # -- wiring ---------------------------------------------------------------------
     def _connect_ui(self):
@@ -265,12 +285,94 @@ class ReaderApp:
             self.set_control("volume", getattr(self, "_last_volume", .85))
 
     def set_choice(self, key, value):
+        if key == "engine":
+            self._set_engine(value)
+            return
         self.config[key] = value
-        if key == "sound_profile":
+        if key == "eleven_voice":
+            self.config["eleven_voice_name"] = self.eleven_voices.get(value, "")
+        elif key == "eleven_until":
+            self.speech.route(self.config)  # a date in the past switches back to Edge now
+            self._render_eleven()
+        elif key == "sound_profile":
             self.playback.player.set_profile(value)
         elif key == "theme":
             self._apply_theme()
         self.save_timer.start()
+
+    # -- speech service -------------------------------------------------------------
+    def _set_engine(self, engine):
+        if engine == "elevenlabs" and not api_key():
+            self.window.set_engine("edge")
+            self._set_status(f"Kein ElevenLabs-Schlüssel gefunden. {KEY_NAME} als Windows-Umgebungsvariable "
+                             "oder in der Datei .env im Vorleser-Ordner hinterlegen, dann erneut wählen.")
+            return
+        if engine == "elevenlabs":
+            until = end_date(self.config)
+            if not until or until < dt.date.today():
+                self.config["eleven_until"] = (dt.date.today() + dt.timedelta(days=ELEVEN_DAYS)).isoformat()
+                self.window.set_until(self.config["eleven_until"])
+            self.speech.enable()
+            self._load_catalog(force=True)
+        self.config["engine"] = engine
+        self.window.set_engine(engine)
+        self._render_eleven()
+        self.save_timer.start()
+
+    def _engine_off(self, reason):
+        if self.config["engine"] != "elevenlabs":
+            return
+        self.config["engine"] = "edge"
+        self.window.set_engine("edge")
+        self._save()
+        text = f"{reason} Der Vorleser nutzt wieder Microsoft Edge."
+        self._set_status(text)
+        self.tray.showMessage("Zurück zu Microsoft Edge", text, QSystemTrayIcon.MessageIcon.Information, 8000)
+
+    def _load_catalog(self, force=False):
+        """Fetch the account's voices and credits in the background (at most once a minute)."""
+        if not api_key() or (not force and time.monotonic() - self.catalog_at < 60):
+            return
+        self.catalog_at = time.monotonic()
+        self.window.set_eleven_status("Verbindung zu ElevenLabs wird geprüft …")
+        future = asyncio.run_coroutine_threadsafe(self.speech.eleven.catalog(), self.playback.loop)
+        future.add_done_callback(self.bridge.catalog.emit)
+
+    def _on_catalog(self, future):
+        try:
+            catalog = future.result()
+        except ElevenLabsError as error:
+            self.catalog_at = 0.0
+            if error.permanent:
+                self.speech.disable(str(error))
+            self.window.set_eleven_status(str(error))
+            return
+        except Exception as error:  # offline: the next opening tries again
+            logging.warning("ElevenLabs-Stimmen nicht geladen: %s", error)
+            self.catalog_at = 0.0
+            self.window.set_eleven_status("ElevenLabs ist gerade nicht erreichbar.")
+            return
+        self.eleven_voices = dict(catalog["voices"])
+        if self.eleven_voices and self.config["eleven_voice"] not in self.eleven_voices:
+            self.config["eleven_voice"] = catalog["voices"][0][0]
+        self.config["eleven_voice_name"] = self.eleven_voices.get(self.config["eleven_voice"], "")
+        self.window.set_eleven_voices(catalog["voices"], self.config["eleven_voice"])
+        self.account = catalog["account"]
+        self._render_eleven()
+        self.save_timer.start()
+
+    def _render_eleven(self):
+        parts = []
+        if self.account:
+            left = self.account.get("character_limit", 0) - self.account.get("character_count", 0)
+            tier = str(self.account.get("tier", "")).replace("_", " ").title()
+            parts.append(f"{tier} · noch {left:,} Credits".replace(",", "."))
+        elif self.account is None:
+            parts.append("Kontingent nicht lesbar: dem Schlüssel fehlt das Recht User Read")
+        until = end_date(self.config)
+        if until:
+            parts.append(f"ab {german_date(until + dt.timedelta(days=1))} automatisch wieder Edge")
+        self.window.set_eleven_status(" · ".join(parts))
 
     def _apply_theme(self):
         Theme.apply(self.config["theme"])
@@ -440,6 +542,8 @@ class ReaderApp:
 
     def _preview_voice(self):
         name = VOICES[self.config["voice"]].split(" (")[0]
+        if self.speech.route(self.config).engine == "elevenlabs":
+            name = self.config["eleven_voice_name"] or "deine ElevenLabs-Stimme"
         self.read_text(f"Hallo, ich bin {name}. So klinge ich, wenn ich dir einen Text vorlese.")
         self._previewing = True  # a voice sample is not "the last reading"
 
@@ -551,6 +655,8 @@ class ReaderApp:
             self.tray.setToolTip("Vorleser · " + text)
 
     def show_window(self):
+        if self.config["engine"] == "elevenlabs":
+            self._load_catalog()
         self.window.show()
         self.window.raise_()
         self.window.activateWindow()

@@ -1,8 +1,8 @@
 # TTS Vorleser
 
 Windows-Vorleser für markierten Text, mit Bedienung im Infobereich (System-Tray).
-Die Spracherzeugung erfolgt **online über Microsoft**; der ausgewählte Text wird
-an den Sprachdienst übertragen. Audioverarbeitung und Wiedergabe erfolgen lokal.
+Die Spracherzeugung erfolgt **online über Microsoft Edge** oder wahlweise **ElevenLabs**; der ausgewählte
+Text wird an den gewählten Sprachdienst übertragen. Audioverarbeitung und Wiedergabe erfolgen lokal.
 
 ## Bedienung
 
@@ -69,7 +69,7 @@ englisch.
 
 ## Einstellungen
 
-Alles auf einer Seite: Stimme mit Hörprobe, Tempo, Lautstärke, Klang, ein Feld für eigenen
+Alles auf einer Seite: Sprachdienst, Stimme mit Hörprobe, Tempo, Lautstärke, Klang, ein Feld für eigenen
 Text (Strg + Enter liest vor), Mini-Player, Autostart, Darstellung (System, Hell, Dunkel) und
 die Tastenkürzel. Stimme gilt ab dem nächsten Vorlesen, Klang für neu vorbereitete Abschnitte.
 
@@ -82,6 +82,38 @@ Lautstärke-Einstellung zu jeder Stimme passt; innerhalb einer Stimme schwankte 
 Kopierte PDF-Zeilen werden verbunden; explizite Listen, Überschriften und Absätze
 behalten ihre Grenzen. HTML-Zeichenreferenzen werden dekodiert. Die Textaufbereitung
 ist regelbasiert und kann ungewöhnliche Formatierungen weiterhin falsch interpretieren.
+
+## ElevenLabs
+
+Unter Einstellungen → Sprachdienst lässt sich ElevenLabs statt Microsoft Edge wählen. Der Schlüssel wird
+nicht in der App gespeichert, sondern gelesen aus
+
+1. der Umgebungsvariable `ELEVENLABS_API_KEY` (auch eine neu gesetzte Windows-Variable, ohne Neustart), oder
+2. einer Datei `.env` im Vorleser-Ordner mit der Zeile `ELEVENLABS_API_KEY=...` (per `.gitignore` ausgeschlossen).
+
+Modelle (Preise laut elevenlabs.io/pricing/api, geprüft 2026-10-27): **Flash v2.5** (Standard, ~75 ms,
+0,04 $ je 1000 Zeichen, halbe Credits) und **Multilingual v2** (natürlicher, 0,08 $ je 1000 Zeichen).
+Tempo erzeugt ElevenLabs selbst zwischen 0,7× und 1,2×; darüber gleicht der Player den Rest aus.
+Wort- und Satzmarkierung kommen aus den Zeichen-Zeitstempeln des Dienstes. Die Ausspracheschreibweisen
+für Edge (z. B. „Clip Board“) werden an ElevenLabs nicht gesendet.
+
+Zurück zu Edge geht es automatisch und dauerhaft (bis ElevenLabs erneut gewählt wird), mit Hinweis im
+Infobereich, wenn
+
+- das Datum unter „Aktiv bis einschließlich“ vorbei ist (beim Wählen: heute + 90 Tage, änderbar);
+  ohne gültiges Datum startet die App immer mit Edge,
+- der Schlüssel fehlt oder abgelehnt wird, die Stimme nicht existiert oder das Abo nicht mehr aktiv ist,
+- das Kontingent nicht mehr für den nächsten Abschnitt plus 2000 Credits Reserve reicht. So läuft das
+  Vorlesen nie in kostenpflichtige Zusatznutzung. Dafür braucht der Schlüssel das Recht „User: Read“,
+  sonst greift nur die Meldung des Dienstes bei aufgebrauchtem Kontingent.
+
+Fällt ElevenLabs nur kurz aus (Netz, Überlastung), liest Edge diesen einen Abschnitt; der nächste versucht
+wieder ElevenLabs. Live-Prüfung mit echtem Schlüssel (kostet etwa 1300 Credits, Hörproben in
+`tests/artifacts/elevenlabs/`):
+
+```powershell
+.venv\Scripts\python.exe -B tests\elevenlabs_check.py
+```
 
 ## Installation und Reparatur
 
@@ -160,7 +192,8 @@ in Word, Browsern oder PDF-Programmen. Diese sollte dort zusätzlich ausprobiert
 | `assets/`, `tools/make_icon.py` | App-Icon; das Skript erzeugt `assets/vorleser.ico` aus der Zeichnung in `ui_theme.py` |
 | `playback.py` | Vorleseaufträge, begrenzter Puffer, Abbruch und Netzwerk-Loop |
 | `audio_player.py` | Klangverarbeitung, Live-Tempo, Live-Lautstärke und Ausgabe |
-| `high_fidelity_tts.py` | Online-Spracherzeugung als Stream, Vorab-Verbindung und Fallback |
+| `high_fidelity_tts.py` | Edge-Spracherzeugung als Stream, Vorab-Verbindung und Fallback |
+| `elevenlabs_tts.py`, `speech_service.py` | ElevenLabs-Stream mit Zeitstempeln und Kontingentprüfung; Wahl des Dienstes und Rückfall auf Edge |
 | `clipboard_capture.py` | Frische Textmarkierung und sichere Wiederherstellung |
 | `text_cleaner.py`, `settings.py` | Textnormalisierung und Einstellungen |
 

@@ -10,8 +10,8 @@ from contextlib import nullcontext
 import numpy as np
 
 from audio_player import AudioPlayer, OUTPUT_SAMPLE_RATE
-from high_fidelity_tts import HighFidelityTTSClient
 from settings import VOICE_GAIN_DB
+from speech_service import SpeechService
 from text_cleaner import group_ranges, speakable, split_units
 
 
@@ -90,7 +90,7 @@ class PlaybackController:
         self.player.set_controls(config["speed"], config["volume"])
         self.player.set_profile(config["sound_profile"])
         self.loop = asyncio.new_event_loop()
-        self.client = client or HighFidelityTTSClient()
+        self.client = client or SpeechService(config)
         self.thread = threading.Thread(target=self._network_loop, daemon=True, name="tts-network")
         self.thread.start()
         self.current = None
@@ -243,11 +243,22 @@ class PlaybackController:
 
         section = index - 1
         on_boundary = job.boundary_handler(section)
+        # The service decides per section (ElevenLabs or Edge) and the tempo it generates at.
+        route = self.client.route(config) if hasattr(self.client, 'route') else None
+        speed = route.speed if route else config["speed"]
+        if route:
+            start, end = job.sections[section]  # neighbouring sentences keep the intonation flowing
+            stream = self.client.synthesize_stream(
+                part.strip(), route=route, config=config, on_boundary=on_boundary,
+                previous_text=' '.join(job.units[max(0, start - 3):start]) or None,
+                next_text=' '.join(job.units[end:end + 3]) or None)
+        else:
+            stream = self.client.synthesize_stream(speakable(part.strip()), on_boundary=on_boundary,
+                                                   **self._voice_args(config))
 
         async def pump():
             try:
-                async for samples, sr in self.client.synthesize_stream(
-                        speakable(part.strip()), on_boundary=on_boundary, **self._voice_args(config)):
+                async for samples, sr in stream:
                     pieces.put(("audio", samples, sr))
                 pieces.put(("end", None, None))
             except BaseException as error:
@@ -256,7 +267,7 @@ class PlaybackController:
 
         future = asyncio.run_coroutine_threadsafe(asyncio.wait_for(pump(), 35), self.loop)
         job.future = future
-        preparer = self.player.stream_section(config["speed"], voice_gain(config["voice"]))
+        preparer = self.player.stream_section(speed, route.gain if route else voice_gain(config["voice"]))
         pending, sr, queued = [], None, 0.0
         # Start as early as possible, then hand over larger pieces. The last
         # 0.4 s stay pending so the section's trailing silence is trimmed whole.
@@ -272,7 +283,7 @@ class PlaybackController:
             if prepared is None:
                 return True
             prepared.marker = (job, section)
-            seconds = len(audio) / sr * config["speed"] / 2
+            seconds = len(audio) / sr * speed / 2
             job.reserve(seconds)
             if not self._put(job, ("audio", (prepared, OUTPUT_SAMPLE_RATE, part, index, total, seconds))):
                 job.reserve(-seconds)
