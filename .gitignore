@@ -9,5 +9,5 @@ TTS Vorleser.exe
 # Erzeugte Prüfergebnisse, Hörproben und Modell-Cache
 tests/artifacts/
 tests/.whisper_cache/
-# Geheimnisse (ElevenLabs-Schlüssel)
+# Lokale Geheimnisse
 .env

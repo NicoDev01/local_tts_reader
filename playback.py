@@ -10,8 +10,8 @@ from contextlib import nullcontext
 import numpy as np
 
 from audio_player import AudioPlayer, OUTPUT_SAMPLE_RATE
+from high_fidelity_tts import HighFidelityTTSClient
 from settings import VOICE_GAIN_DB
-from speech_service import SpeechService
 from text_cleaner import group_ranges, speakable, split_units
 
 
@@ -38,7 +38,6 @@ class Reading:
     boundaries: dict = field(default_factory=dict)  # section -> [(seconds, unit)]
     words: dict = field(default_factory=dict)       # section -> [(seconds, char, length, duration)]
     speed: float = 1.0                              # tempo the service was asked for
-    fixed: bool = False                             # the voice keeps its own pace (ElevenLabs v3)
     unit_chars: dict = field(default_factory=dict)  # section -> char start of each unit
 
     def reserve(self, seconds):
@@ -91,7 +90,7 @@ class PlaybackController:
         self.player.set_controls(config["speed"], config["volume"])
         self.player.set_profile(config["sound_profile"])
         self.loop = asyncio.new_event_loop()
-        self.client = client or SpeechService(config)
+        self.client = client or HighFidelityTTSClient()
         self.thread = threading.Thread(target=self._network_loop, daemon=True, name="tts-network")
         self.thread.start()
         self.current = None
@@ -197,8 +196,8 @@ class PlaybackController:
         the running sentence, ("stretch", None) in the last sentence, or None if unchanged.
         """
         job = self.current
-        if not job or job.done.is_set() or not job.units or abs(job.speed - speed) < .01 or job.fixed:
-            return None  # a fixed-pace voice would only be regenerated (credits) for the same audio
+        if not job or job.done.is_set() or not job.units or abs(job.speed - speed) < .01:
+            return None
         position = self.position()
         if not position:
             return "now", job.first
@@ -244,24 +243,11 @@ class PlaybackController:
 
         section = index - 1
         on_boundary = job.boundary_handler(section)
-        # The service decides per section (ElevenLabs or Edge) and the tempo it generates at.
-        route = self.client.route(config) if hasattr(self.client, 'route') else None
-        speed = route.speed if route else config["speed"]
-        fixed = bool(route and route.fixed)
-        job.fixed = fixed
-        if route:
-            start, end = job.sections[section]  # neighbouring sentences keep the intonation flowing
-            stream = self.client.synthesize_stream(
-                part.strip(), route=route, config=config, on_boundary=on_boundary,
-                previous_text=' '.join(job.units[max(0, start - 3):start]) or None,
-                next_text=' '.join(job.units[end:end + 3]) or None)
-        else:
-            stream = self.client.synthesize_stream(speakable(part.strip()), on_boundary=on_boundary,
-                                                   **self._voice_args(config))
 
         async def pump():
             try:
-                async for samples, sr in stream:
+                async for samples, sr in self.client.synthesize_stream(
+                        speakable(part.strip()), on_boundary=on_boundary, **self._voice_args(config)):
                     pieces.put(("audio", samples, sr))
                 pieces.put(("end", None, None))
             except BaseException as error:
@@ -270,8 +256,7 @@ class PlaybackController:
 
         future = asyncio.run_coroutine_threadsafe(asyncio.wait_for(pump(), 35), self.loop)
         job.future = future
-        preparer = self.player.stream_section(speed, route.gain if route else voice_gain(config["voice"]),
-                                              fixed=fixed)
+        preparer = self.player.stream_section(config["speed"], voice_gain(config["voice"]))
         pending, sr, queued = [], None, 0.0
         # Start as early as possible, then hand over larger pieces. The last
         # 0.4 s stay pending so the section's trailing silence is trimmed whole.
@@ -287,7 +272,7 @@ class PlaybackController:
             if prepared is None:
                 return True
             prepared.marker = (job, section)
-            seconds = len(audio) / sr * speed / 2
+            seconds = len(audio) / sr * config["speed"] / 2
             job.reserve(seconds)
             if not self._put(job, ("audio", (prepared, OUTPUT_SAMPLE_RATE, part, index, total, seconds))):
                 job.reserve(-seconds)

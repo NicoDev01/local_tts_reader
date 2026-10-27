@@ -97,7 +97,6 @@ class PreparedAudio:
     final: bool = True  # only the last piece of a section is followed by its pause
     start: float = 0.0  # seconds into the section's request audio where this piece begins
     marker: object = None  # identifies the section for the player's cursor
-    fixed: bool = False  # keeps its own pace: tempo changes never stretch it
 
 
 class SectionStream:
@@ -108,8 +107,8 @@ class SectionStream:
     """
     FADE = int(OUTPUT_SAMPLE_RATE * .008)
 
-    def __init__(self, player, speed, gain=1.0, fixed=False):
-        self.player, self.speed, self.gain, self.fixed = player, speed, gain, fixed
+    def __init__(self, player, speed, gain=1.0):
+        self.player, self.speed, self.gain = player, speed, gain
         self.resampler = None
         self.voiced = False      # leading silence already trimmed
         self.filtered = False    # filter state initialized
@@ -153,9 +152,9 @@ class SectionStream:
             audio[len(audio) - n:] *= 0.5 * (1.0 + np.cos(np.linspace(0, np.pi, n, dtype=np.float32)))
         if not len(audio) and not final:
             return None
-        prepared = PreparedAudio(audio, self.speed, final=final, start=self.position, fixed=self.fixed)
+        prepared = PreparedAudio(audio, self.speed, final=final, start=self.position)
         self.position += len(audio) / OUTPUT_SAMPLE_RATE
-        prepared.rate = 1.0 if self.fixed else self.player.controls()[0] / self.speed
+        prepared.rate = self.player.controls()[0] / self.speed
         if abs(prepared.rate - 1.0) > 1e-6 and len(audio):
             prepared.rendered = self.player._stretch(audio, prepared.rate)
         return prepared
@@ -246,10 +245,10 @@ class AudioPlayer:
             prepared.rendered = self._stretch(prepared.source, prepared.rate)
         return prepared
 
-    def stream_section(self, speed, gain=1.0, fixed=False):
+    def stream_section(self, speed, gain=1.0):
         if not math.isfinite(speed) or speed <= 0:
             raise ValueError("Ungültiges Quelltempo")
-        return SectionStream(self, speed, gain, fixed)
+        return SectionStream(self, speed, gain)
 
     @contextmanager
     def session(self, cancel):
@@ -317,7 +316,7 @@ class AudioPlayer:
                 if cancel.is_set():
                     break
                 requested, _ = self.controls()
-                requested = rate if getattr(audio, "fixed", False) else requested / base_speed
+                requested /= base_speed
                 if requested != last_requested:
                     last_requested, stable_frames = requested, 0
                 if pending is not None and pending[1].done():
