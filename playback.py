@@ -38,6 +38,7 @@ class Reading:
     boundaries: dict = field(default_factory=dict)  # section -> [(seconds, unit)]
     words: dict = field(default_factory=dict)       # section -> [(seconds, char, length, duration)]
     speed: float = 1.0                              # tempo the service was asked for
+    fixed: bool = False                             # the voice keeps its own pace (ElevenLabs v3)
     unit_chars: dict = field(default_factory=dict)  # section -> char start of each unit
 
     def reserve(self, seconds):
@@ -196,8 +197,8 @@ class PlaybackController:
         the running sentence, ("stretch", None) in the last sentence, or None if unchanged.
         """
         job = self.current
-        if not job or job.done.is_set() or not job.units or abs(job.speed - speed) < .01:
-            return None
+        if not job or job.done.is_set() or not job.units or abs(job.speed - speed) < .01 or job.fixed:
+            return None  # a fixed-pace voice would only be regenerated (credits) for the same audio
         position = self.position()
         if not position:
             return "now", job.first
@@ -246,6 +247,8 @@ class PlaybackController:
         # The service decides per section (ElevenLabs or Edge) and the tempo it generates at.
         route = self.client.route(config) if hasattr(self.client, 'route') else None
         speed = route.speed if route else config["speed"]
+        fixed = bool(route and route.fixed)
+        job.fixed = fixed
         if route:
             start, end = job.sections[section]  # neighbouring sentences keep the intonation flowing
             stream = self.client.synthesize_stream(
@@ -267,7 +270,8 @@ class PlaybackController:
 
         future = asyncio.run_coroutine_threadsafe(asyncio.wait_for(pump(), 35), self.loop)
         job.future = future
-        preparer = self.player.stream_section(speed, route.gain if route else voice_gain(config["voice"]))
+        preparer = self.player.stream_section(speed, route.gain if route else voice_gain(config["voice"]),
+                                              fixed=fixed)
         pending, sr, queued = [], None, 0.0
         # Start as early as possible, then hand over larger pieces. The last
         # 0.4 s stay pending so the section's trailing silence is trimmed whole.

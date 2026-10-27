@@ -16,7 +16,7 @@ DEFAULTS = dict(hotkey="ctrl+alt+v", pause_hotkey="ctrl+alt+space", stop_hotkey=
                 theme="system", sound_profile="studio_warmth",
                 hud_anchor=[], welcomed=False,  # hud_anchor: bottom-right [x, y] after dragging
                 # Speech service; ElevenLabs falls back to Edge after eleven_until (ISO date).
-                engine="edge", eleven_voice="", eleven_voice_name="", eleven_model="eleven_flash_v2_5",
+                engine="edge", eleven_voice="", eleven_voice_name="", eleven_model="eleven_v3",
                 eleven_until="")
 ENGINES = {"edge": "Microsoft Edge · kostenlos", "elevenlabs": "ElevenLabs"}
 # Voices offered by the Edge read-aloud service (checked 2026-10-26). Seraphina is listed by

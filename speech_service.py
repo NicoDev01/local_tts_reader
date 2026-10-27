@@ -10,7 +10,7 @@ import logging
 import threading
 from dataclasses import dataclass
 
-from elevenlabs_tts import ElevenLabsClient, ElevenLabsError, api_key, native_speed
+from elevenlabs_tts import MODELS, ElevenLabsClient, ElevenLabsError, api_key, native_speed
 from high_fidelity_tts import HighFidelityTTSClient
 from settings import VOICE_GAIN_DB
 from text_cleaner import speakable
@@ -23,6 +23,7 @@ class Route:
     engine: str   # "edge" or "elevenlabs"
     speed: float  # tempo the audio is generated at; the player covers any difference
     gain: float   # linear level match
+    fixed: bool = False  # the voice keeps its own pace; never time-stretched (sounds metallic)
 
 
 def edge_gain(voice):
@@ -70,7 +71,10 @@ class SpeechService:
             elif not self.key():
                 self.disable("Kein ElevenLabs-Schlüssel gefunden.")
             elif config.get("eleven_voice"):
-                return Route("elevenlabs", native_speed(config["speed"]), 10 ** (ELEVEN_GAIN_DB / 20))
+                gain = 10 ** (ELEVEN_GAIN_DB / 20)
+                if MODELS[config["eleven_model"]].tempo:
+                    return Route("elevenlabs", native_speed(config["speed"]), gain)
+                return Route("elevenlabs", 1.0, gain, fixed=True)
         return Route("edge", config["speed"], edge_gain(config["voice"]))
 
     async def prewarm(self):
@@ -99,7 +103,9 @@ class SpeechService:
                     self.disable(str(error))
                 else:
                     logging.warning("ElevenLabs nicht erreichbar (%s); Edge liest diesen Abschnitt", error)
-        rate = f"{round((route.speed - 1) * 100):+d}%"
+        # A fixed-pace route is never stretched, so Edge speaks the set tempo itself.
+        speed = config["speed"] if route.fixed else route.speed
+        rate = f"{round((speed - 1) * 100):+d}%"
         async for piece in self.edge.synthesize_stream(speakable(text), voice=config["voice"], rate=rate,
                                                        pitch=config["pitch"], on_boundary=on_boundary):
             yield piece

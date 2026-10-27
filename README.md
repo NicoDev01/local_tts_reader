@@ -91,9 +91,18 @@ nicht in der App gespeichert, sondern gelesen aus
 1. der Umgebungsvariable `ELEVENLABS_API_KEY` (auch eine neu gesetzte Windows-Variable, ohne Neustart), oder
 2. einer Datei `.env` im Vorleser-Ordner mit der Zeile `ELEVENLABS_API_KEY=...` (per `.gitignore` ausgeschlossen).
 
-Modelle (Preise laut elevenlabs.io/pricing/api, geprüft 2026-10-27): **Flash v2.5** (Standard, ~75 ms,
-0,04 $ je 1000 Zeichen, halbe Credits) und **Multilingual v2** (natürlicher, 0,08 $ je 1000 Zeichen).
-Tempo erzeugt ElevenLabs selbst zwischen 0,7× und 1,2×; darüber gleicht der Player den Rest aus.
+Modelle (Preise laut elevenlabs.io/pricing/api, geprüft 2026-10-27):
+
+- **v3** (Standard, beste Qualität im Hörvergleich, 0,08 $ je 1000 Zeichen, erstes Audio ~0,7 s). Spricht
+  in **eigenem Tempo**: v3 ignoriert die Tempo-Einstellung, und Nachstrecken klingt blechern, daher wirkt
+  der Tempo-Regler bei v3 nicht. Eckige Klammern liest v3 sonst als Regieanweisung („[lacht]“); sie werden
+  als runde gesendet. Nachbarsätze als Kontext lehnt v3 ab (400) und bekommt sie nicht.
+- **Flash v2.5** (~0,16 s, 0,04 $ je 1000 Zeichen, halbe Credits) und **Multilingual v2** (0,08 $, Start
+  nach ~2 s). Beide erzeugen Tempo selbst zwischen 0,7× und 1,2×; darüber streckt der Player den Rest.
+
+v4 und v4 Turbo liefen im Test (2026-10-27) ebenfalls, klangen im Hörvergleich aber schlechter als v3 und
+haben keine Tempo-Einstellung; sie sind nicht wählbar.
+
 Wort- und Satzmarkierung kommen aus den Zeichen-Zeitstempeln des Dienstes. Die Ausspracheschreibweisen
 für Edge (z. B. „Clip Board“) werden an ElevenLabs nicht gesendet.
 
@@ -108,7 +117,7 @@ Infobereich, wenn
   sonst greift nur die Meldung des Dienstes bei aufgebrauchtem Kontingent.
 
 Fällt ElevenLabs nur kurz aus (Netz, Überlastung), liest Edge diesen einen Abschnitt; der nächste versucht
-wieder ElevenLabs. Live-Prüfung mit echtem Schlüssel (kostet etwa 1300 Credits, Hörproben in
+wieder ElevenLabs. Live-Prüfung mit echtem Schlüssel (kostet etwa 1700 Credits, Hörproben in
 `tests/artifacts/elevenlabs/`):
 
 ```powershell

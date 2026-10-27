@@ -131,6 +131,28 @@ class ClientTests(unittest.TestCase):
         self.assertIn((.6, "Wie geht's?", "sentence", 0.0), [(round(e[0], 2),) + e[1:] for e in events])
         self.assertEqual(remaining, 600000 - 1000 - len(TEXT) // 2)
 
+    def test_v3_gets_neither_speed_nor_context_and_no_audio_tags(self):
+        service = FakeService()
+        _, _, remaining = self.collect(service, model="eleven_v3")
+        body = service.requests[0][3]
+        self.assertNotIn("voice_settings", body, "v3 ignores the speed setting")
+        self.assertNotIn("previous_text", body, "v3 answers previous_text/next_text with 400")
+        self.assertNotIn("next_text", body)
+        self.assertEqual(body["language_code"], "de")
+        self.assertEqual(remaining, 600000 - 1000 - len(TEXT), "v3 costs full credits")
+
+    def test_v3_reads_square_brackets_instead_of_acting_them(self):
+        async def go():
+            async with FakeService() as service:
+                client = ElevenLabsClient(lambda: "k", service.base)
+                try:
+                    async for _ in client.synthesize_stream("Siehe [1] und [lacht].", "de1", "eleven_v3"):
+                        pass
+                finally:
+                    await client.close()
+                return service.requests[0][3]["text"]
+        self.assertEqual(run(go()), "Siehe (1) und (lacht).")
+
     def test_multilingual_v2_gets_no_language_code(self):
         service = FakeService()
         self.collect(service, model="eleven_multilingual_v2")
@@ -207,8 +229,9 @@ class FakeEleven:
 
 
 class ServiceTests(unittest.TestCase):
-    config = dict(DEFAULTS, engine="elevenlabs", eleven_voice="de1", speed=1.5,
+    config = dict(DEFAULTS, engine="elevenlabs", eleven_voice="de1", speed=1.5, eleven_model="eleven_flash_v2_5",
                   eleven_until=(dt.date.today() + dt.timedelta(days=5)).isoformat())
+    v3 = dict(config, eleven_model="eleven_v3")
 
     def read(self, service):
         async def go():
@@ -238,6 +261,17 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(len(pieces), 1)
         self.assertEqual(edge.texts, [("Clip Board.", "+20%")], "Edge gets its spelling and the same tempo")
         self.assertEqual(reasons, ["Kontingent aufgebraucht."])
+
+    def test_v3_keeps_its_own_pace_and_edge_stands_in_at_the_set_tempo(self):
+        edge = FakeEdge()
+        service = SpeechService(edge=edge, eleven=FakeEleven(ElevenLabsError("busy")), key=lambda: "k")
+        route = service.route(self.v3)
+        self.assertEqual((route.engine, route.speed, route.fixed), ("elevenlabs", 1.0, True))
+
+        async def go():
+            return [p async for p, _ in service.synthesize_stream("Satz.", route, self.v3)]
+        run(go())
+        self.assertEqual(edge.texts, [("Satz.", "+50%")], "Edge is not stretched either, so it speaks 1.5 itself")
 
     def test_passing_error_only_borrows_edge_for_this_section(self):
         reasons, edge = [], FakeEdge()
@@ -274,6 +308,29 @@ class PlaybackRouteTests(unittest.TestCase):
             self.assertTrue(job.done.wait(5))
             self.assertEqual(eleven.seen, (1.2, "Erster Satz.", None))
             self.assertEqual(player.pieces[0].speed, 1.2, "the player stretches only from 1.2 to 1.5")
+        finally:
+            controller.close()
+            player.close()
+
+    def test_v3_is_never_stretched_and_a_new_tempo_costs_no_regeneration(self):
+        from playback import PlaybackController
+        from tests.test_streaming import RecordingPlayer
+
+        class Eleven(FakeEleven):
+            async def synthesize_stream(self, *args):
+                yield np.ones(48000, np.float32), 24000
+
+        player = RecordingPlayer()
+        player.set_controls(1.5, 1.0)
+        service = SpeechService(edge=FakeEdge(), eleven=Eleven(), key=lambda: "k")
+        controller = PlaybackController(lambda *a: None, ServiceTests.v3, service, player)
+        try:
+            job = controller.start(None, ServiceTests.v3, units=["Erster Satz.", "Zweiter Satz."])
+            self.assertTrue(job.done.wait(5))
+            piece = player.pieces[0]
+            self.assertEqual((piece.fixed, piece.rate, piece.rendered), (True, 1.0, None))
+            job.done.clear()  # pretend it is still reading
+            self.assertIsNone(controller.respeed_plan(1.8))
         finally:
             controller.close()
             player.close()

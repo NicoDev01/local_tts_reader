@@ -1,7 +1,8 @@
 """ElevenLabs speech synthesis: streamed PCM with character timings, plus account checks.
 
 API details checked against elevenlabs.io/docs on 2026-10-27: stream-with-timestamps returns JSON
-chunks with ``audio_base64`` and per-character ``alignment``; ``voice_settings.speed`` accepts 0.7–1.2.
+chunks with ``audio_base64`` and per-character ``alignment``; ``voice_settings.speed`` accepts 0.7–1.2
+(not honoured by v3, see ``MODELS``).
 """
 import asyncio
 import base64
@@ -13,6 +14,7 @@ import re
 import time
 import winreg
 from pathlib import Path
+from typing import NamedTuple
 
 import aiohttp
 import numpy as np
@@ -22,10 +24,22 @@ KEY_NAME = "ELEVENLABS_API_KEY"
 ENV_FILE = Path(__file__).resolve().parent / ".env"
 SAMPLE_RATE = 24000
 SPEED_RANGE = (.7, 1.2)
-# Models for German reading on the text-to-speech endpoint; label, credit factor (pricing page:
-# Flash costs half of Multilingual v2), whether ``language_code`` is accepted.
-MODELS = {"eleven_flash_v2_5": ("Flash v2.5 · schnell, halber Preis", .5, True),
-          "eleven_multilingual_v2": ("Multilingual v2 · Start nach ~2 s", 1.0, False)}
+
+class Model(NamedTuple):
+    label: str
+    factor: float    # credits per character (pricing page: Flash costs half of v2 and v3)
+    language: bool   # ``language_code`` accepted
+    tempo: bool      # ``voice_settings.speed`` honoured; otherwise it speaks at its own pace
+    context: bool    # ``previous_text``/``next_text`` accepted
+    tags: bool = False  # [square brackets] are performed as audio tags instead of read
+
+
+# Models for German reading on the text-to-speech endpoint (measured live 2026-10-27).
+# v3 ignores the speed setting and rejects previous_text/next_text with 400.
+MODELS = {"eleven_v3": Model("v3 · beste Qualität, eigenes Tempo", 1.0, True, False, False, True),
+          "eleven_flash_v2_5": Model("Flash v2.5 · schnell, halber Preis", .5, True, True, True),
+          "eleven_multilingual_v2": Model("Multilingual v2 · Start nach ~2 s", 1.0, False, True, True)}
+_FALLBACK_MODEL = Model("", 1.0, False, True, True)
 ACCOUNT_SECONDS = 300   # account figures older than this are refreshed before trusting them
 QUOTA_RESERVE = 2000    # credits kept free so a reading never runs into paid overage
 INACTIVE = {"free", "free_disabled", "past_due", "incomplete"}
@@ -230,14 +244,19 @@ class ElevenLabsClient:
         """Yield 24 kHz Float32 mono pieces while ElevenLabs is still speaking."""
         if not text.strip():
             return
-        label, factor, language = MODELS.get(model, (model, 1.0, False))
+        spec = MODELS.get(model, _FALLBACK_MODEL)
+        factor = spec.factor
         await self.check(int(len(text) * factor))
-        body = dict(text=text, model_id=model, voice_settings=dict(speed=native_speed(speed)))
-        if language:
+        # Same length, so the character timings still line up with ``text``.
+        spoken = text.replace("[", "(").replace("]", ")") if spec.tags else text
+        body = dict(text=spoken, model_id=model)
+        if spec.tempo:
+            body["voice_settings"] = dict(speed=native_speed(speed))
+        if spec.language:
             body["language_code"] = "de"
-        if previous_text:
+        if previous_text and spec.context:
             body["previous_text"] = previous_text[-300:]
-        if next_text:
+        if next_text and spec.context:
             body["next_text"] = next_text[:300]
         session = await self._get_session()
         url = f"{self.base}/v1/text-to-speech/{voice}/stream/with-timestamps?output_format=pcm_{SAMPLE_RATE}"
