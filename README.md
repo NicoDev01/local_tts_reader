@@ -63,3 +63,7 @@ Konsolenfenster und legt eine Desktop-Verknüpfung an.
 - Nur Windows, und auf deutsche Texte ausgelegt.
 
 Mehr zu Bedienung, Aufbau und Messungen: [docs/details.md](docs/details.md)
+
+## Lizenz
+
+[MIT](LICENSE)
