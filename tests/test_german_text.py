@@ -71,6 +71,15 @@ class RespellingTests(unittest.TestCase):
         self.assertEqual(say('Unter macOS läuft Node.js.'), 'Unter Mäk OS läuft Node Dschäi Es.')
         self.assertEqual(say('Der Webhook im Backend nach dem Rebase.'), 'Der Web Hook im Bäck End nach dem Ribäis.')
 
+    def test_business_terms_and_german_lookalikes(self):
+        from text_cleaner import speakable
+        say = lambda text: speakable(clean_text(text))
+        self.assertEqual(say('Die Deadline fürs Software-Update.'), 'Die Dedd Lain fürs Softwär Update.')
+        self.assertEqual(say('Der Agent ruft zwei Plug-ins auf.'), 'Der Ejtschent ruft zwei Plagins auf.')
+        # German words that merely start like the English ones stay untouched.
+        self.assertEqual(say('Die Agenten der Branche und Managerinnen.'),
+                         'Die Agenten der Branche und Managerinnen.')
+
     def test_js_frameworks_are_not_file_names(self):
         self.assertEqual(clean_text('Mit Vue.js und Next.js.'), 'Mit Vue JS und Next JS.')
         self.assertEqual(clean_text('Die Datei main.js.'), 'Die Datei main.')

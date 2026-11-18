@@ -271,6 +271,131 @@ ROMAN_TO_NUM = {
 
 DOT_PLACEHOLDER = "__DOT__"
 
+# Line-start list markers: Markdown, typographic bullets, Word's private-use symbol bullets.
+_BULLET = re.compile(r'^(?:[-*+•▪◦·‣–-][ \t]+|o\t)(?=\S)')
+_NUMBERED = re.compile(r'^\d{1,2}[.)][ \t]+\S')
+_TABLE_RULE = re.compile(r'^:?-{2,}:?$')
+# A line ending in one of these continues on the next line (copied line wrap).
+_JOINERS = frozenset(
+    'der die das den dem des ein eine einen einem einer eines und oder aber sowie mit von vom zu '
+    'zur zum für auf in im an am bei nach über unter aus wie als dass ob wenn weil sich nicht auch '
+    'noch so sehr nur bis durch gegen ohne um the a an of to and or with for'.split())
+
+
+def _table_row(line):
+    if line.startswith('|') and line.endswith('|') and len(line) > 1:
+        return [cell.strip() for cell in line[1:-1].split('|')]
+    if '\t' in line and not _BULLET.match(line) and not _NUMBERED.match(line):
+        cells = [cell.strip() for cell in line.split('\t')]
+        if sum(1 for cell in cells if cell) >= 2:
+            return cells
+    return None
+
+
+def _sentence(text):
+    text = text.strip()
+    return text + ('' if text.endswith(('.', '!', '?', ':', ';')) else '.')
+
+
+def _table_sentences(rows):
+    """One spoken sentence per row; with a header, each value is named by its column."""
+    header = None
+    if len(rows) > 1 and all(_TABLE_RULE.match(cell) for cell in rows[1] if cell):
+        header, rows = rows[0], rows[2:]
+    elif len(rows) > 2 and all(rows[0]) and not any(re.search(r'\d', cell) for cell in rows[0]):
+        header, rows = rows[0], rows[1:]
+    rows = [row for row in rows if not all(_TABLE_RULE.match(cell) or not cell for cell in row)]
+    sentences = []
+    if header and len(header) == 2:
+        sentences.append(_sentence(', '.join(header)))
+    for row in rows:
+        label, values = row[0], row[1:]
+        if header and len(header) > 2:
+            names = header[1:] + [''] * len(values)
+            values = [f'{name} {value}' if name else value for name, value in zip(names, values)]
+        values = [value for value in values if value]
+        if label and values:
+            sentences.append(_sentence(f'{label}: {", ".join(values)}'))
+        elif label or values:
+            sentences.append(_sentence(label or ', '.join(values)))
+    return sentences
+
+
+def _structure(text):
+    """Turn line structure into punctuation before lines are joined.
+
+    A copied line break is either a wrap inside a sentence (PDF, narrow windows) or a boundary
+    the page showed by layout alone: headings, list items, table rows. Wrapped lines run to
+    about the width of the longest line or end in a word like "und"; boundaries are shorter.
+    Headings and tables are set apart like paragraphs.
+    """
+    lines = [line.strip() for line in text.split('\n')]
+    widths = [len(line) for line in lines if line and _table_row(line) is None]
+    longest = max(widths, default=0)
+
+    def is_long(line):
+        return longest >= 30 and len(line) >= .7 * longest
+
+    def wraps(line, following):
+        last = line.split()[-1].lower()
+        # Narrow columns: every line is about as wide as the widest and the sentence goes on.
+        filled = len(line) >= .7 * longest and following[:1].islower()
+        return line.endswith((',', '-')) or last in _JOINERS or is_long(line) or filled
+
+    out = []  # [text, separator after it, kind]
+
+    def boundary():
+        if out:
+            out[-1][1] = '\n\n'
+
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if not line or re.match(r'^(?:[-*_]\s*){3,}$', line):
+            boundary()
+            i += 1
+            continue
+        if line.startswith('```'):
+            i += 1
+            continue
+        if _table_row(line) is not None:
+            rows = []
+            while i < len(lines) and lines[i] and (row := _table_row(lines[i])) is not None:
+                rows.append(row)
+                i += 1
+            boundary()
+            out.extend([sentence, '\n', 'row'] for sentence in _table_sentences(rows))
+            boundary()
+            continue
+        line = re.sub(r'^>\s*', '', line)
+        following = next((l for l in lines[i + 1:] if l), '')
+        heading = re.match(r'^#{1,6}[ \t]+(.+)', line)
+        bullet = _BULLET.match(line)
+        if heading:
+            boundary()
+            out.append([_sentence(heading.group(1)), '\n\n', 'heading'])
+        elif bullet or _NUMBERED.match(line):
+            out.append([_sentence(line[bullet.end():] if bullet else line), '\n', 'item'])
+        elif line.endswith(('.', '!', '?', ':', ';')) or re.search(r'[.!?]["“”»)\]]$', line):
+            out.append([line, '\n', 'prose'])
+        elif wraps(line, following):
+            out.append([line, ' ', 'prose'])
+        else:
+            # A short line without punctuation: a heading, caption or list item on its own line.
+            if out and out[-1][1] == '\n' and out[-1][2] == 'prose' and not out[-1][0].endswith(':'):
+                boundary()  # it starts a new section after running text
+            starts_section = (is_long(following) or _table_row(following) is not None
+                              or following.startswith('#') or bool(_BULLET.match(following)))
+            # Title directly above a subheading: both are headings, not a two-item list.
+            # A table caption stands apart even right after a list.
+            if _table_row(following) is not None or (
+                    starts_section and out and out[-1][2] == 'short' and out[-1][1] == '\n'
+                    and (len(out) == 1 or out[-2][1] == '\n\n')):
+                boundary()
+            out.append([_sentence(line), '\n\n' if starts_section else '\n', 'short'])
+        i += 1
+    return ''.join(text + separator for text, separator, _ in out)
+
 
 def clean_text(text: str) -> str:
     """Cleans and normalizes raw text into fluid, highly natural spoken German."""
@@ -279,17 +404,15 @@ def clean_text(text: str) -> str:
 
     text = unescape(text).replace('\r\n', '\n').replace('\r', '\n')
     text = text.replace('\u00a0', ' ').replace('\u202f', ' ').replace('\u200b', '')
-    # Explicit lists/headings deserve boundaries; ordinary PDF line wrapping does not.
-    def mark_line(match):
-        content = match.group(2).strip()
-        return content + ('' if content.endswith(('.', '!', '?', ':', ';')) else '.')
-    text = re.sub(r'(?m)^[ \t]*(#{1,6}[ \t]+|[-*•▪][ \t]+)([^\n]+)', mark_line, text)
 
     # 1. Strip soft hyphens
     text = text.replace("\xad", "")
 
     # 2. Fix hyphenated line breaks (e.g. "Geschwindig-\nkeit" -> "Geschwindigkeit")
-    text = re.sub(r'(\w+)-\s*\n\s*(\w+)', r'\1\2', text)
+    text = re.sub(r'(\w+)-[ \t]*\n[ \t]*(\w+)', r'\1\2', text)
+
+    # Headings, list items and table rows get their boundaries; ordinary line wraps do not.
+    text = _structure(text)
 
     # 3. Strip Wikipedia citations [1], [2], [14]
     text = re.sub(r'\[\d+\]', '', text)
@@ -674,12 +797,14 @@ def clean_text(text: str) -> str:
 # ("Tray-Symbol" sounded like "Dreh-Symbol"); with a space they are read in English.
 # Checked with Whisper on 2026-10-27. Only the text sent to the voice changes.
 ENGLISH_PARTS = (
-    "account", "app", "backup", "blog", "board", "browser", "button", "cache", "chat", "clip", "clipboard",
-    "cloud", "code", "community", "content", "cookie", "dashboard", "desktop", "download", "feature",
-    "feedback", "file", "game", "hotkey", "home", "laptop", "link", "live", "login", "meeting",
-    "mobile", "online", "player", "plug", "post", "queue", "screen", "server", "setup", "shop", "shortcut",
-    "smart", "social", "software", "stream", "team", "tool", "tools", "touch", "tray", "update", "upload",
-    "user", "web", "widget", "workflow", "workspace",
+    "account", "agent", "app", "backup", "blog", "board", "browser", "button", "cache", "call", "chat",
+    "chatbot", "clip", "clipboard", "cloud", "coaching", "code", "community", "container", "content",
+    "cookie", "dashboard", "deadline", "deployment", "desktop", "developer", "download", "feature",
+    "feedback", "file", "game", "hotkey", "home", "homepage", "laptop", "link", "live", "login", "manager",
+    "meeting", "mindset", "mobile", "online", "password", "payment", "player", "plug", "plugin", "post",
+    "pricing", "queue", "screen", "server", "setup", "shop", "shortcut", "smart", "social", "software",
+    "stakeholder", "stream", "team", "tool", "tools", "touch", "tray", "update", "upload", "user", "web",
+    "widget", "workflow", "workspace",
 )
 _ENGLISH = "|".join(ENGLISH_PARTS)
 _ENGLISH_HYPHEN = re.compile(rf"(?i)\b({_ENGLISH})-(?=\w)|(?<=\w)-({_ENGLISH})\b")
@@ -714,6 +839,36 @@ RESPELLINGS = [
     (re.compile(r"\barray(s?)\b", re.IGNORECASE), r"Ärräi\1"),        # 2/3
     (re.compile(r"\bYAML\b", re.IGNORECASE), "Jammel"),               # 2/3
     (re.compile(r"\bwhisper\b", re.IGNORECASE), "Uisper"),            # 2/3
+    # Everyday business and tech terms, measured the same way on 2026-11-18 (tests/english_terms_check.py:
+    # 97 of 128 common terms were already fine). Not solved: Sales, Prompts, Tracking; "Code" keeps the
+    # usual German "Kohd". "Budget" stays French-German on purpose.
+    (re.compile(r"\bcall(s?)\b", re.IGNORECASE), r"Kholl\1"),
+    (re.compile(r"\bdeadline(s?)\b", re.IGNORECASE), r"Dedd Lain\1"),
+    (re.compile(r"\bmanager(s?)\b", re.IGNORECASE), r"Männidschr\1"),
+    (re.compile(r"\bstakeholder\b", re.IGNORECASE), "Stäik Holder"),  # Whisper: the homophone "Steakholder"
+    (re.compile(r"\bcoaching\b", re.IGNORECASE), "Koutsching"),
+    (re.compile(r"\bforecast(s?)\b", re.IGNORECASE), r"Fore Cast\1"),
+    (re.compile(r"\bpricing\b", re.IGNORECASE), "Preissing"),
+    (re.compile(r"\bmindset(s?)\b", re.IGNORECASE), r"Maindset\1"),
+    (re.compile(r"\bsoftware\b", re.IGNORECASE), "Softwär"),
+    (re.compile(r"\bpassword(s?)\b", re.IGNORECASE), r"Passwörd\1"),
+    (re.compile(r"\bhomepage(s?)\b", re.IGNORECASE), r"Houmpeidsch\1"),
+    (re.compile(r"\bserver(s?)\b", re.IGNORECASE), r"Sörwer\1"),
+    (re.compile(r"\bapps\b", re.IGNORECASE), "Äps"),                  # 2/3
+    (re.compile(r"\bpayments\b", re.IGNORECASE), "Peymends"),
+    (re.compile(r"\bpayment\b", re.IGNORECASE), "Peyment"),
+    (re.compile(r"\blibrary\b", re.IGNORECASE), "Laibräri"),
+    (re.compile(r"\bbranch\b", re.IGNORECASE), "Bräntsch"),
+    (re.compile(r"\bdeployment(s?)\b", re.IGNORECASE), r"Diploiment\1"),
+    (re.compile(r"\bdeveloper(s?)\b", re.IGNORECASE), r"Diwellopper\1"),
+    (re.compile(r"\bcoding\b", re.IGNORECASE), "Kouding"),
+    (re.compile(r"\bcontainer(s?)\b", re.IGNORECASE), r"Kontäiner\1"),
+    (re.compile(r"\bplug ?-?in(s?)\b", re.IGNORECASE), r"Plagin\1"),
+    (re.compile(r"\blatency\b", re.IGNORECASE), "Leytenssi"),
+    (re.compile(r"\bchat ?bot\b", re.IGNORECASE), "Tschett Bott"),   # plurals of these three: no spelling worked
+    (re.compile(r"\buse[ -]?case\b", re.IGNORECASE), "Jus Käis"),
+    (re.compile(r"\bagents\b", re.IGNORECASE), "Ejtschents"),
+    (re.compile(r"\bagent\b", re.IGNORECASE), "Ejtschent"),          # 2/3
 ]
 
 

@@ -76,6 +76,12 @@ Backend → „Bäck End“, Debugging → „Dibagging“, JSON → „Jason“
 Node.js → „Node Dschäi Es“ (Frameworks wie Node.js und Vue.js werden nicht mehr als Dateiendung
 abgeschnitten). Ohne funktionierende Schreibweise bleiben Merge, Bug, Bugfix, Thread, Async und Await.
 
+Business- und Alltagsbegriffe (geprüft 2026-11-18 mit `tests/english_terms_check.py`, 128 Wörter):
+97 klangen schon englisch. Neu u. a. Deadline → „Dedd Lain“, Manager → „Männidschr“, Agent →
+„Ejtschent“, Deployment → „Diploiment“, Developer → „Diwellopper“, Plugin → „Plagin“, Chatbot →
+„Tschett Bott“, Use Case → „Jus Käis“. Ohne Lösung: Sales, Prompts, Tracking. „Code“ bleibt beim
+üblichen deutschen „Kohd“, „Budget“ beim französisch-deutschen „Büdschee“.
+
 ## Einstellungen
 
 Alles auf einer Seite: Stimme mit Hörprobe, Tempo, Lautstärke, Klang, ein Feld für eigenen
@@ -88,8 +94,13 @@ erhalten. Nur an Anfragegrenzen ergänzt der Player eine kurze Pause.
 Das Standardprofil „Warm“ verwendet dezente Klangfilter ohne Kompressor und Limiter.
 Jede Stimme wird mit einem festen, gemessenen Ausgleich auf Killians Pegel gebracht (bis 3,1 dB), damit die
 Lautstärke-Einstellung zu jeder Stimme passt; innerhalb einer Stimme schwankte der Pegel nur um höchstens 1,4 dB.
-Kopierte PDF-Zeilen werden verbunden; explizite Listen, Überschriften und Absätze
-behalten ihre Grenzen. HTML-Zeichenreferenzen werden dekodiert. Die Textaufbereitung
+Kopierte PDF-Zeilen werden verbunden; Listen, Überschriften und Absätze behalten ihre
+Grenzen, auch wenn sie nur durch das Layout erkennbar waren: Browser und Word kopieren eine
+Überschrift als kurze Zeile ohne Punkt. Eine Zeile gilt als Umbruch, wenn sie etwa so breit ist
+wie die breiteste oder auf ein Wort wie „und“ endet; kürzere Zeilen enden mit einer Pause,
+Überschriften mit einer Absatzpause. Tabellen (Tabs aus Browser und Word, Markdown mit `|`)
+werden zeilenweise gelesen, mit Kopfzeile als „Miete: Betrag 800 Euro, Anteil 40 Prozent.“
+HTML-Zeichenreferenzen werden dekodiert. Die Textaufbereitung
 ist regelbasiert und kann ungewöhnliche Formatierungen weiterhin falsch interpretieren.
 
 ## Installation und Reparatur

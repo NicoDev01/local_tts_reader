@@ -19,9 +19,31 @@ class TextExperienceTests(unittest.TestCase):
         self.assertEqual(clean_text('Der Text wird aus einem Dokument\nübernommen und ohne neue\nPausen vorgelesen.'),
                          'Der Text wird aus einem Dokument übernommen und ohne neue Pausen vorgelesen.')
 
+    def test_layout_only_structure_gets_boundaries(self):
+        # Plain text exactly as Chromium copies <h1>, <h2>, <p>, <h3>, <ul> and <table>.
+        # Its lists carry no bullet, so the list heading only gets a sentence pause.
+        copied = ('Kontokorrentkredit\nErgebnis\nDie Kreditlinie zählt zur Liquidität. Sie ist flexibel.\n\n'
+                  'Vorteile\nflexibel nutzbar\nnur Zinsen auf Inanspruchnahme\nErgebnis als Tabelle\n'
+                  'Position\tBetrag\tAnteil\nMiete\t800 €\t40 %\nEssen\t300 €\t15 %\nDanach folgt Text.')
+        self.assertEqual(clean_text(copied).split('\n\n'), [
+            'Kontokorrentkredit.', 'Ergebnis.', 'Die Kreditlinie zählt zur Liquidität. Sie ist flexibel.',
+            'Vorteile. flexibel nutzbar. nur Zinsen auf Inanspruchnahme.', 'Ergebnis als Tabelle.',
+            'Miete: Betrag 800 Euro, Anteil 40 Prozent. Essen: Betrag 300 Euro, Anteil 15 Prozent.',
+            'Danach folgt Text.'])
+
+    def test_word_bullets_and_markdown_tables(self):
+        self.assertEqual(clean_text('Vorteile\r\n•\tflexibel\r\n\tgünstig\r\n'), 'Vorteile.\n\nflexibel. günstig.')
+        table = '## Kosten\n| Position | Betrag |\n|---|:---:|\n| Miete | 800 € |\n| Essen | |\n'
+        self.assertEqual(clean_text(table), 'Kosten.\n\nPosition, Betrag. Miete: 800 Euro. Essen.')
+
+    def test_narrow_column_wraps_stay_one_sentence(self):
+        column = 'Die Kreditlinie wird\nvom Kreditinstitut\neingeräumt und kann\nflexibel genutzt\nwerden.'
+        self.assertEqual(clean_text(column),
+                         'Die Kreditlinie wird vom Kreditinstitut eingeräumt und kann flexibel genutzt werden.')
+
     def test_explicit_headings_and_bullets_keep_boundaries(self):
         result = clean_text('# Einkauf\n- Äpfel\n- Birnen\n\nDanach bezahlen.')
-        self.assertIn('Einkauf. Äpfel. Birnen.', result)
+        self.assertIn('Einkauf.\n\nÄpfel. Birnen.', result)  # a heading pauses like a paragraph
         self.assertIn('\n\nDanach', result)
 
     def test_entities_and_comparisons(self):
