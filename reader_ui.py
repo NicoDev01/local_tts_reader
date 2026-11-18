@@ -48,7 +48,7 @@ class Bridge(QObject):
     """Signals hop from worker threads (hotkeys, network, audio) to the Qt thread."""
     action = Signal(str)
     playback = Signal(object, str, object)
-    selection = Signal(object, str)
+    selection = Signal(object, object)  # token, text ('' nothing selected, None clipboard not saved)
 
 
 class ReaderApp:
@@ -331,7 +331,10 @@ class ReaderApp:
     def _on_selection(self, token, text):
         if token is not self.capture_cancel or token.is_set():
             return
-        if text.strip():
+        if text is None:  # the clipboard holds something that cannot be saved and restored
+            self._message("Zwischenablage nicht sicherbar",
+                          ". Etwas anderes kopieren (z. B. ein Wort) und erneut drücken.")
+        elif text.strip():
             self.read_text(text)
         else:
             self._message("Kein Text markiert")
@@ -491,8 +494,8 @@ class ReaderApp:
         if self.config["hud_enabled"]:
             self.hud.show_player()
 
-    def _message(self, text):
-        self._set_status(text + ". Text markieren und erneut drücken.")
+    def _message(self, text, hint=". Text markieren und erneut drücken."):
+        self._set_status(text + hint)
         if not self.config["hud_enabled"]:
             self.tray.showMessage("Vorleser", text, QSystemTrayIcon.MessageIcon.Information, 2500)
             self.state = "idle"

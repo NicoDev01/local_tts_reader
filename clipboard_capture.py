@@ -33,6 +33,11 @@ gdi.CopyEnhMetaFileW.restype = wintypes.HANDLE
 gdi.DeleteEnhMetaFile.argtypes = [wintypes.HANDLE]
 gdi.DeleteObject.argtypes = [wintypes.HANDLE]
 _capture_lock = threading.Lock()
+# Formats Windows derives from another one on the clipboard (learn.microsoft.com, "Synthesized
+# Clipboard Formats"): it recreates them after a restore, so they need no copy of their own.
+# Before, a screenshot (CF_DIB -> CF_PALETTE) or Office content (CF_ENHMETAFILE -> CF_METAFILEPICT)
+# made every capture fail before copying.
+_SYNTHESIZED_FROM = {3: (14,), 9: (8, 17)}
 
 
 def _open(hwnd=None):
@@ -75,12 +80,16 @@ class Snapshot:
         self.hwnd = hwnd
         _open(hwnd)
         try:
-            fmt = 0
-            total = 0
+            formats, fmt = [], 0
             while True:
                 fmt = u32.EnumClipboardFormats(fmt)
                 if not fmt:
                     break
+                formats.append(fmt)
+            total = 0
+            for fmt in formats:
+                if any(origin in formats for origin in _SYNTHESIZED_FROM.get(fmt, ())):
+                    continue
                 source = u32.GetClipboardData(fmt)
                 if not source:
                     raise OSError('Ein Zwischenablageformat konnte nicht gesichert werden')
@@ -146,6 +155,8 @@ class Snapshot:
 
 
 def capture_selection(cancel, restore=True):
+    """The selected text, '' if nothing is selected, or None if the clipboard could not be
+    saved first (then nothing was copied, so the user's clipboard is untouched)."""
     if not _capture_lock.acquire(blocking=False):
         return ''
     snapshot, hwnd = None, None
@@ -161,7 +172,11 @@ def capture_selection(cancel, restore=True):
             hwnd = u32.CreateWindowExW(0, 'STATIC', '', 0, 0, 0, 0, 0, wintypes.HWND(-3), None, None, None)
             if not hwnd:
                 raise ctypes.WinError(ctypes.get_last_error())
-            snapshot = Snapshot(hwnd)
+            try:
+                snapshot = Snapshot(hwnd)
+            except (OSError, MemoryError):
+                logging.exception('Zwischenablage konnte nicht gesichert werden')
+                return None
         before = u32.GetClipboardSequenceNumber()
         u32.keybd_event(17, 0, 0, 0)
         try:

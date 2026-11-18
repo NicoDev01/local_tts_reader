@@ -196,6 +196,29 @@ class WindowsTests(unittest.TestCase):
                 read.assert_not_called()
                 snapshot.return_value.restore.assert_not_called()
 
+    def test_unsavable_clipboard_is_reported_and_left_alone(self):
+        with patch.object(clipboard, 'Snapshot', side_effect=OSError('Format')), \
+                patch.object(clipboard, 'u32') as u32:
+            u32.GetForegroundWindow.return_value = 123
+            u32.GetAsyncKeyState.return_value = 0
+            self.assertIsNone(clipboard.capture_selection(threading.Event()))
+            u32.keybd_event.assert_not_called()
+
+    def test_formats_windows_derives_are_not_copied(self):
+        # A screenshot lists CF_DIB (8) and the derived CF_PALETTE (9); Office content lists
+        # CF_ENHMETAFILE (14) and the derived CF_METAFILEPICT (3). Neither may stop the capture.
+        for formats in ([8, 9, 2, 17], [14, 3]):
+            listed = iter(formats + [0])
+            with patch.object(clipboard, '_open'), patch.object(clipboard, 'u32') as u32, \
+                    patch.object(clipboard, 'gdi'), patch.object(clipboard, 'k32') as k32, \
+                    patch.object(clipboard.ctypes, 'memmove'):
+                u32.EnumClipboardFormats.side_effect = lambda previous: next(listed)
+                k32.GlobalSize.return_value = 16
+                snapshot = clipboard.Snapshot(None)
+                copied = [item[0] for item in snapshot.items]
+                self.assertEqual(copied, [f for f in formats if f not in (3, 9)])
+                snapshot.items.clear()
+
     def test_newer_clipboard_is_not_overwritten(self):
         snapshot = clipboard.Snapshot.__new__(clipboard.Snapshot)
         snapshot.items, snapshot.hwnd = [], None
