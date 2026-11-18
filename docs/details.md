@@ -99,7 +99,8 @@ Grenzen, auch wenn sie nur durch das Layout erkennbar waren: Browser und Word ko
 Überschrift als kurze Zeile ohne Punkt. Eine Zeile gilt als Umbruch, wenn sie etwa so breit ist
 wie die breiteste oder auf ein Wort wie „und“ endet; kürzere Zeilen enden mit einer Pause,
 Überschriften mit einer Absatzpause. Tabellen (Tabs aus Browser und Word, Markdown mit `|`)
-werden zeilenweise gelesen, mit Kopfzeile als „Miete: Betrag 800 Euro, Anteil 40 Prozent.“
+werden zeilenweise gelesen; mit Kopfzeile steht vor jedem Wert sein Spaltenname mit Doppelpunkt:
+„Position: Miete. Betrag: 800 Euro. Anteil: 40 Prozent.“
 HTML-Zeichenreferenzen werden dekodiert. Die Textaufbereitung
 ist regelbasiert und kann ungewöhnliche Formatierungen weiterhin falsch interpretieren.
 

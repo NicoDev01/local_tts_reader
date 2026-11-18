@@ -298,7 +298,8 @@ def _sentence(text):
 
 
 def _table_sentences(rows):
-    """One spoken sentence per row; with a header, each value is named by its column."""
+    """With a header every value is named by its column ("Betrag: 800 Euro."), so a column
+    name never runs into its value; without one, a row reads "Miete: 800 Euro, 40 Prozent."."""
     header = None
     if len(rows) > 1 and all(_TABLE_RULE.match(cell) for cell in rows[1] if cell):
         header, rows = rows[0], rows[2:]
@@ -306,14 +307,13 @@ def _table_sentences(rows):
         header, rows = rows[0], rows[1:]
     rows = [row for row in rows if not all(_TABLE_RULE.match(cell) or not cell for cell in row)]
     sentences = []
-    if header and len(header) == 2:
-        sentences.append(_sentence(', '.join(header)))
     for row in rows:
-        label, values = row[0], row[1:]
-        if header and len(header) > 2:
-            names = header[1:] + [''] * len(values)
-            values = [f'{name} {value}' if name else value for name, value in zip(names, values)]
-        values = [value for value in values if value]
+        if header:
+            names = header + [''] * len(row)
+            sentences.extend(_sentence(f'{name}: {value}' if name else value)
+                             for name, value in zip(names, row) if value)
+            continue
+        label, values = row[0], [value for value in row[1:] if value]
         if label and values:
             sentences.append(_sentence(f'{label}: {", ".join(values)}'))
         elif label or values:

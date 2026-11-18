@@ -28,13 +28,16 @@ class TextExperienceTests(unittest.TestCase):
         self.assertEqual(clean_text(copied).split('\n\n'), [
             'Kontokorrentkredit.', 'Ergebnis.', 'Die Kreditlinie zählt zur Liquidität. Sie ist flexibel.',
             'Vorteile. flexibel nutzbar. nur Zinsen auf Inanspruchnahme.', 'Ergebnis als Tabelle.',
-            'Miete: Betrag 800 Euro, Anteil 40 Prozent. Essen: Betrag 300 Euro, Anteil 15 Prozent.',
+            'Position: Miete. Betrag: 800 Euro. Anteil: 40 Prozent. '
+            'Position: Essen. Betrag: 300 Euro. Anteil: 15 Prozent.',
             'Danach folgt Text.'])
 
     def test_word_bullets_and_markdown_tables(self):
         self.assertEqual(clean_text('Vorteile\r\n•\tflexibel\r\n\tgünstig\r\n'), 'Vorteile.\n\nflexibel. günstig.')
         table = '## Kosten\n| Position | Betrag |\n|---|:---:|\n| Miete | 800 € |\n| Essen | |\n'
-        self.assertEqual(clean_text(table), 'Kosten.\n\nPosition, Betrag. Miete: 800 Euro. Essen.')
+        self.assertEqual(clean_text(table), 'Kosten.\n\nPosition: Miete. Betrag: 800 Euro. Position: Essen.')
+        # Without a header row the first cell names the row.
+        self.assertEqual(clean_text('Miete\t800 €\nEssen\t300 €'), 'Miete: 800 Euro. Essen: 300 Euro.')
 
     def test_narrow_column_wraps_stay_one_sentence(self):
         column = 'Die Kreditlinie wird\nvom Kreditinstitut\neingeräumt und kann\nflexibel genutzt\nwerden.'
